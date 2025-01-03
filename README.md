@@ -28,7 +28,7 @@ This project is a (work in progress) implementation of a Conversational Large La
   ```
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE.txt](LICENSE.txt) file for more details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
 
 ## Contact
 Zain Sharief - zain.sharief21@gmail.com - [LinkedIn](https://www.linkedin.com/in/zain-sharief-5193b425b/)
