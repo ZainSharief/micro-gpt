@@ -8,18 +8,12 @@ class GPTModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim, context_size, num_heads, num_layers, device, projection=4, dropout=0.1):
         super().__init__()
         self.embedding = Embedding(vocab_size, embedding_dim, context_size, dropout)
-        self.blocks = nn.ModuleList([Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)])
+        self.blocks = nn.Sequential(*[Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)])
         self.out_projection = nn.Linear(embedding_dim, vocab_size, bias=False)
 
     def forward(self, x):
-        padding_mask = (x == 0).float()
-        padding_mask = padding_mask.masked_fill(padding_mask == 1, float('-inf'))
-        padding_mask = padding_mask.unsqueeze(1)
-        padding_mask = padding_mask.expand(-1, x.size(1), -1)
-
         x = self.embedding(x)
-        for block in self.blocks:
-            x = block(x, padding_mask)
+        x = self.blocks(x)
         return self.out_projection(x)
 
 class Embedding(nn.Module):
@@ -57,36 +51,52 @@ class Block(nn.Module):
     def __init__(self, embedding_dim, num_heads, context_size, device, projection=4, dropout=0.1):
         super().__init__()
         self.layernorm1 = nn.LayerNorm(embedding_dim)
-        self.multiheadattention = MultiHeadAttention(embedding_dim, num_heads, context_size, device)
+        self.multiheadattention = MultiHeadAttention(context_size, embedding_dim, num_heads, device)
         self.dropout1 = nn.Dropout(dropout)
 
         self.layernorm2 = nn.LayerNorm(embedding_dim)
         self.feedforward = FeedForward(embedding_dim, projection)
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, x, padding_mask):
-        x = x + self.dropout1(self.multiheadattention(self.layernorm1(x), padding_mask))
+    def forward(self, x):
+        x = x + self.dropout1(self.multiheadattention(self.layernorm1(x)))
         x = x + self.dropout2(self.feedforward(self.layernorm2(x)))
         return x
-
+    
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, embedding_dim, num_heads, context_size, device):
+    def __init__(self, context_size, embedding_dim, num_heads, device):
         super().__init__()
+
+        assert embedding_dim % num_heads == 0, 'embedding_dim must be divisible by num_heads'
+
+        self.head_size = embedding_dim // num_heads
         self.num_heads = num_heads
-        self.multihead_attention = nn.MultiheadAttention(embed_dim=embedding_dim, num_heads=num_heads, batch_first=True)
+        self.embedding_dim = embedding_dim
 
-        self.attn_mask = torch.tril(torch.ones(context_size, context_size, device=device), diagonal=-1)
-        self.attn_mask = self.attn_mask.masked_fill(self.attn_mask == 1, float('-inf'))
+        self.query = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.key = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.value = nn.Linear(embedding_dim, embedding_dim, bias=False)
 
-    def forward(self, x, padding_mask=None):
-        if padding_mask is not None:
-            attn_mask = self.attn_mask + padding_mask
-        else:
-            attn_mask = self.attn_mask
+        mask = torch.tril(torch.ones(context_size, context_size, device=device))
+        self.register_buffer('mask', mask)
 
-        out, _ = self.multihead_attention(x, x, x, attn_mask=attn_mask, need_weights=False, is_causal=True)
-        return out
+    def forward(self, x):
+        B, T, C = x.shape
+
+        q = self.query(x).view(B, self.num_heads, T, self.head_size)
+        k = self.key(x).view(B, self.num_heads, T, self.head_size)
+        v = self.value(x).view(B, self.num_heads, T, self.head_size)
+
+        wei = (q @ k.transpose(-2, -1)) / math.sqrt(self.embedding_dim)
+        wei = wei.masked_fill(self.mask == 0, float('-inf'))
+
+        wei = F.softmax(wei, dim=-1)
+
+        x = wei @ v
+        x = x.transpose(1, 2).contiguous().view(B, T, C)
+
+        return x
 
 class FeedForward(nn.Module):
 
@@ -100,3 +110,10 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.feedforward(x)
+    
+if __name__ == '__main__':
+    
+    B, T, C = 1, 8, 32
+    num_heads = 8
+    head = MultiHeadAttention(T, C, num_heads, 'cpu')
+    head(torch.rand(B, T, C))

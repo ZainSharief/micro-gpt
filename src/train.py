@@ -12,7 +12,7 @@ def calculate_loss(xb, yb):
     B, T, C = xb.shape
     xb = xb.view(B*T, C)
     yb = yb.view(B*T)
-    loss = F.cross_entropy(xb, yb, ignore_index=0)
+    loss = F.cross_entropy(xb, yb)
     return loss
 
 def calculate_val_loss(val_size):
@@ -31,9 +31,8 @@ batch_size = 32
 embedding_dim = 512
 context_size = 128
 num_heads = 8
-num_layers = 6
-learning_rate = 3e-4
-epochs = 3
+num_layers = 8
+learning_rate = 1e-4
 max_iters = 11118
 val_iter = 1000
 
@@ -46,43 +45,41 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
 
 min_val_loss = float('inf')
-
 m = model.to(device)
-for epoch in range(epochs):
 
-    total_loss = 0
-    for iter in range(max_iters):
+total_loss = 0
+for iter in range(max_iters):
 
-        # sample a batch of data
-        xb, yb = get_batch(dataset, tokeniser, batch_size, context_size, device, iter=iter)
-        optimizer.zero_grad()
+    # sample a batch of data
+    xb, yb = get_batch(dataset, tokeniser, batch_size, context_size, device, iter=iter)
+    optimizer.zero_grad()
 
-        # evaluate the loss
-        out = model(xb)
+    # evaluate the loss
+    out = model(xb)
 
-        loss = calculate_loss(out, yb)
-        total_loss += loss
-        loss.backward()
+    loss = calculate_loss(out, yb)
+    total_loss += loss
+    loss.backward()
 
-        if (iter + 1) % val_iter == 0:
-            val_loss = calculate_val_loss(val_size=100)
+    if (iter + 1) % val_iter == 0:
+        val_loss = calculate_val_loss(val_size=100)
 
-            if  min_val_loss > val_loss:
-                min_val_loss = val_loss
+        if  min_val_loss > val_loss:
+            min_val_loss = val_loss
 
-                checkpoint = {
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                }
-                torch.save(checkpoint, 'model_checkpoint.pth')
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+            }
+            torch.save(checkpoint, 'model_checkpoint.pth')
 
-            scheduler.step()
+        scheduler.step()
 
-            print(f"\repoch={epoch+1}/{epochs} batch={iter+1}/{max_iters} loss={total_loss/(iter+1):.4f} val_loss={val_loss:.4f}")
+        print(f"\rbatch={iter+1}/{max_iters} loss={total_loss/(iter+1):.4f} val_loss={val_loss:.4f}")
 
-        print(f"\repoch={epoch+1}/{epochs} batch={iter+1}/{max_iters} loss={total_loss/(iter+1):.4f}", end='')
+    print(f"\rbatch={iter+1}/{max_iters} loss={total_loss/(iter+1):.4f}", end='')
 
-        optimizer.step()
+    optimizer.step()
 
 torch.save(model.state_dict(), 'model_weights.pth')
