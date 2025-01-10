@@ -22,9 +22,9 @@ def get_batch(dataset, tokeniser, batch_size, context_size, device, iter=None, t
 
         text += line + '\n'
 
-    data = tokeniser.encode(text)[0, :]
-    idx = torch.randint(len(data), (batch_size,))
-    data = torch.cat([data, torch.zeros(context_size, dtype=torch.long)])
+    data = torch.tensor(tokeniser.encode(text), dtype=torch.long)
+    idx = torch.randint(len(data)-1, (batch_size,))
+    data = torch.cat([torch.zeros(context_size-1, dtype=torch.long), data])
 
     x = torch.stack([data[i:i+context_size] for i in idx])
     y = torch.stack([data[i+1:i+context_size+1] for i in idx])

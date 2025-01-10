@@ -29,8 +29,8 @@ class BPETokeniser():
                 new_list.append(item[0])
 
         # The last element should be added if the last pair is the max_pair otherwise it is missed
-        if pairs_list[-1] != max_pair:
-            new_list.append(pairs_list[-1][0])
+        if not skip: #pairs_list[-1] != max_pair:
+            new_list.append(pairs_list[-1][1])
 
         return new_list
 
@@ -72,8 +72,9 @@ class BPETokeniser():
         data = list(map(int, data.encode('utf-8')))
 
         for encoding_pair in self.encode_map.keys():
+            pairs_list = list(zip(data[:-1], data[1:]))
             idx = self.encode_map[encoding_pair]
-            data = self.replace(data, encoding_pair, idx)
+            data = self.replace(pairs_list, encoding_pair, idx)
         
         return data 
     
@@ -113,7 +114,6 @@ class BPETokeniser():
             return False
 
 if __name__ == '__main__':
-
     import timeit
 
     # Wrapper function for timing
