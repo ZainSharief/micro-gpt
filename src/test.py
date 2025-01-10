@@ -5,33 +5,15 @@ from torch.nn import functional as F
 from data.BPEtokeniser import BPETokeniser
 from model import GPTModel 
 
-@torch.no_grad()
-def generate(model, idx, context_size, temperature, max_new_tokens):
-    new_idx = []
-    for _ in range(max_new_tokens):
-        idx_cond = idx[:, -context_size:] 
-        logits = model(idx_cond)
-        logits = logits[:, -1, :]
-        probs = F.softmax(logits, dim=-1)
-        print(probs)
-        idx_next = torch.multinomial(probs, num_samples=1)
-
-        if idx_next == 0:
-            return new_idx
-        
-        idx = torch.cat((idx, idx_next), dim=1)
-        new_idx.append(idx_next)
-
-    return new_idx
-
 torch.manual_seed(411)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 embedding_dim = 768
-context_size = 256
+context_size = 128
 num_heads = 12
 num_layers = 12
 
 temperature = 0.7
+k=15
 
 tokeniser = BPETokeniser(10_000)
 tokeniser.load(file_path='byte-pair-encoding10000.pkl')
@@ -44,11 +26,19 @@ model.eval()
 
 conversation = ""
 while True:
-    conversation += input('YOU: ') + '\n'
-    context = tokeniser.encode(conversation)[-context_size:] 
-    context = context + [0]*(context_size - len(context))
-    context = torch.tensor(context).unsqueeze(0)
-    context.to(device)
-    modeltext = tokeniser.decode(generate(model, context, context_size, temperature, max_new_tokens=100)).split('\n')[0]
-    conversation += modeltext + '\n'
-    print('MicroGPT: ' + modeltext)
+    
+    user_text = input('YOU: ')
+
+    if user_text != '':
+
+        conversation += user_text + '\n'
+
+        model_text = model.generate(
+            tokeniser=tokeniser, 
+            text=conversation, 
+            temperature=temperature, 
+            k=k,
+            max_new_tokens=100,
+        )
+
+        print('MicroGPT: ' + model_text)

@@ -7,6 +7,10 @@ class GPTModel(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, context_size, num_heads, num_layers, device, projection=4, dropout=0.1):
         super().__init__()
+
+        self.context_size = context_size
+        self.device = device
+
         self.embedding = Embedding(vocab_size, embedding_dim, context_size, dropout)
         self.blocks = nn.Sequential(*[Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)])
         self.out_projection = nn.Linear(embedding_dim, vocab_size, bias=False)
@@ -15,6 +19,40 @@ class GPTModel(nn.Module):
         x = self.embedding(x)
         x = self.blocks(x)
         return self.out_projection(x)
+    
+    @torch.no_grad()
+    def generate(self, tokeniser, text, temperature, k, max_new_tokens):
+
+        # Encodes the text and adjusts size to context_size
+        context = tokeniser.encode(text)[-self.context_size:]        
+        context = [0]*(self.context_size - len(context)) + context   
+
+        context = torch.tensor(context).unsqueeze(0)
+        context.to(self.device)
+
+        output = []
+        for _ in range(max_new_tokens):
+
+            # Passes through model and takes the last token
+            context = context[:, -self.context_size:] 
+            logits = self.forward(context)[:, -1, :] 
+
+            # Uses temperature to scale the logits for softmax
+            logits = logits / temperature           
+            probs = F.softmax(logits, dim=-1)
+
+            # Uses top-k sampling to get the next token
+            probs, idxs = torch.topk(probs, k)      
+            idx = idxs[0][torch.multinomial(probs, 1)]
+
+            # Returns the sequence if the end of sequence is reached
+            if idx == tokeniser.eos_token:
+                return tokeniser.decode(output)
+            
+            context = torch.cat((context, idx), dim=1)
+            output.append(idx[0].int())
+
+        return tokeniser.decode(output)
 
 class Embedding(nn.Module):
 
@@ -110,10 +148,3 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.feedforward(x)
-    
-if __name__ == '__main__':
-    
-    B, T, C = 1, 8, 32
-    num_heads = 8
-    head = MultiHeadAttention(T, C, num_heads, 'cpu')
-    head(torch.rand(B, T, C))
