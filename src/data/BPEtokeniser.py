@@ -41,7 +41,7 @@ class BPETokeniser():
         data = list(map(int, data.encode('utf-8')))
         idx = max(data) + 1
     
-        for _ in range(self.num_merges):
+        for num in range(self.num_merges):
 
             # Has to recalculate the pairs each time to account for new pairs
             pairs_list = list(zip(data[:-1], data[1:]))
@@ -56,6 +56,8 @@ class BPETokeniser():
             data = self.replace(pairs_list, max_pair, idx)
             self.encode_map[max_pair] = idx
             idx += 1
+
+            print(f'\rTokeniser:{num+1}/{self.num_merges} complete', end='')
 
         # Decode map is a swapped version of the encode map
         self.decode_map = {k:v for v,k in self.encode_map.items()}
