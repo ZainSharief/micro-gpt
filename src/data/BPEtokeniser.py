@@ -7,6 +7,7 @@ class BPETokeniser():
         self.encode_map = {}
         self.decode_map = {}
         self.vocab_size = 0
+        self.eos_token = ord('\n')
         self.num_merges = num_merges 
     
     def replace(self, pairs_list: list[tuple[int]], max_pair: tuple[int], idx: int) -> list[int]:
@@ -29,7 +30,7 @@ class BPETokeniser():
                 new_list.append(item[0])
 
         # The last element should be added if the last pair is the max_pair otherwise it is missed
-        if not skip: #pairs_list[-1] != max_pair:
+        if not skip: 
             new_list.append(pairs_list[-1][1])
 
         return new_list

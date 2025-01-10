@@ -43,6 +43,6 @@ def get_text(dataset, train=True):
             line = sub(r"(\b\w+)\s'\s(\w+)", r"\1'\2", line)
             line = sub(r" ’ ", r"'", line)
 
-            text += line + '\n'
+            text += line + ' '
 
     return text
