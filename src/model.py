@@ -7,65 +7,63 @@ class GPTModel(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, context_size, num_heads, num_layers, device, projection=4, dropout=0.1):
         super().__init__()
-
         self.context_size = context_size
         self.device = device
 
         self.embedding = Embedding(vocab_size, embedding_dim, context_size, dropout)
-        self.blocks = nn.Sequential(*[Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)])
+        self.blocks = nn.Sequential(*[Block(embedding_dim, num_heads, device, projection, dropout) for _ in range(num_layers)])
         self.out_projection = nn.Linear(embedding_dim, vocab_size, bias=False)
 
     def forward(self, x):
         x = self.embedding(x)
         x = self.blocks(x)
         return self.out_projection(x)
-    
+
     @torch.no_grad()
     def generate(self, tokeniser, text, temperature, k, max_new_tokens):
 
         # Encodes the text and adjusts size to context_size
         context = tokeniser.encode(text)[-self.context_size:]        
-        context = [0]*(self.context_size - len(context)) + context   
-
-        context = torch.tensor(context).unsqueeze(0)
         context.to(self.device)
 
-        output = []
+        output = ''
         for _ in range(max_new_tokens):
 
             # Passes through model and takes the last token
             context = context[:, -self.context_size:] 
             logits = self.forward(context)[:, -1, :] 
+            logits[:, 0] = float('-inf')
 
             # Uses temperature to scale the logits for softmax
             logits = logits / temperature           
             probs = F.softmax(logits, dim=-1)
 
             # Uses top-k sampling to get the next token
-            probs, idxs = torch.topk(probs, k)      
+            probs, idxs = torch.topk(probs, k)   
             idx = idxs[0][torch.multinomial(probs, 1)]
-
-            # Returns the sequence if the end of sequence is reached
-            if idx == tokeniser.eos_token:
-                return tokeniser.decode(output)
             
             context = torch.cat((context, idx), dim=1)
-            output.append(idx[0].int())
+            idx = idx[0].int()
+            output += tokeniser.decode(idx)
 
-        return tokeniser.decode(output)
+            # Returns the sequence if the end of sequence is reached
+            if tokeniser.eos_token in output:
+                return output.split(tokeniser.eos_token)[0]
+
+        return output
 
 class Embedding(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, context_size, dropout):
         super().__init__()
-        self.token_embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.token_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
         self.positional_embedding = PositionalEncoding(context_size, embedding_dim)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
-        token_embedding = self.token_embedding(x)
-        token_embedding += self.positional_embedding(token_embedding)
-        return self.dropout(token_embedding)
+        x = self.token_embedding(x)
+        x = self.positional_embedding(x)
+        return self.dropout(x)
 
 class PositionalEncoding(nn.Module):
 
@@ -86,10 +84,10 @@ class PositionalEncoding(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, embedding_dim, num_heads, context_size, device, projection=4, dropout=0.1):
+    def __init__(self, embedding_dim, num_heads, device, projection=4, dropout=0.1):
         super().__init__()
         self.layernorm1 = nn.LayerNorm(embedding_dim)
-        self.multiheadattention = MultiHeadAttention(context_size, embedding_dim, num_heads, device)
+        self.multiheadattention = MultiHeadAttention(embedding_dim, num_heads, dropout, device)
         self.dropout1 = nn.Dropout(dropout)
 
         self.layernorm2 = nn.LayerNorm(embedding_dim)
@@ -103,8 +101,9 @@ class Block(nn.Module):
     
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, context_size, embedding_dim, num_heads, device):
+    def __init__(self, embedding_dim, num_heads, dropout, device):
         super().__init__()
+        self.device = device
 
         assert embedding_dim % num_heads == 0, 'embedding_dim must be divisible by num_heads'
 
@@ -112,28 +111,33 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.embedding_dim = embedding_dim
 
-        self.query = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.key = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.value = nn.Linear(embedding_dim, embedding_dim, bias=False)
-
-        mask = torch.tril(torch.ones(context_size, context_size, device=device))
-        self.register_buffer('mask', mask)
+        self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
+        self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        B, T, C = x.shape
+        B, T, C = x.size()
 
-        q = self.query(x).view(B, self.num_heads, T, self.head_size)
-        k = self.key(x).view(B, self.num_heads, T, self.head_size)
-        v = self.value(x).view(B, self.num_heads, T, self.head_size)
+        mask = torch.tril(torch.ones(T, T, device=self.device)).view(1, 1, T, T)
 
-        wei = (q @ k.transpose(-2, -1)) / math.sqrt(self.embedding_dim)
-        wei = wei.masked_fill(self.mask == 0, float('-inf'))
+        qkv = self.attn(x)
+        q, k, v = qkv.split(self.embedding_dim, dim=2)
+
+        # (B, num_heads, T, head_size)
+        k = k.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
+        q = q.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
+        v = v.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
+
+        wei = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_size))
+        wei = wei.masked_fill(mask[:, :, :T, :T] == 0, float('-inf'))
 
         wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
 
         x = wei @ v
         x = x.transpose(1, 2).contiguous().view(B, T, C)
 
+        x = self.proj(x)
         return x
 
 class FeedForward(nn.Module):
