@@ -5,6 +5,7 @@ class GPTtokenizer():
     def __init__(self):
         self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2", clean_up_tokenization_spaces=True)
         self.vocab_size = self.tokenizer.vocab_size
+        self.eos_token = '<|endoftext|>'
 
     def encode(self, data):
         return self.tokenizer.encode(data, return_tensors="pt")

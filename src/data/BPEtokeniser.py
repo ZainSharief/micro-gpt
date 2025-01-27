@@ -7,7 +7,7 @@ class BPETokeniser():
         self.encode_map = {}
         self.decode_map = {}
         self.vocab_size = 0
-        self.eos_token = ord('\n')
+        self.eos_token = '<|SEP|>'
         self.num_merges = num_merges 
     
     def replace(self, pairs_list: list[tuple[int]], max_pair: tuple[int], idx: int) -> list[int]:
@@ -117,25 +117,9 @@ class BPETokeniser():
             return False
 
 if __name__ == '__main__':
-    import timeit
-
-    # Wrapper function for timing
-    def time_create_encoding(tokeniser_class, data):
-        tokeniser = tokeniser_class(1000)
-        tokeniser.create_encoding(data)
-
-    # The data for testing
-    data = """2MGKwAS1PzI4z6hs1kuDX9OYIwKhkJPG7a5LG3CqZnQjbpCanhqeAClXv5HtuNfIRQ48qZNQWAL41R7PR8h5oh5QAEeIRRdIb7rHmAVO0DlEQjBhgTcRCsCzQ4F18PcMypsCntbzjN0UuUklUyONM7NNeqiaqsYEq0DDvwrZCBvlfTo5QqVm52yuihh1Ti4dSRAnrrDo
-    Rh3A4Teu3pz6NYwJFd2FbX9fDjD12Yi9CDM5MIHK5R01pwlQCiW4iZWfA4BZc1OLyQpnUZYrkARN6AVT6n6Zp4IAjbMn2o1OGUP6Zg0L1vJuRUdIIAdqeji322YQjyTDyKbcAkzxpncFhYPWvRuw44TKQPGV3AGoXkoAz 94x04sq1zq6GvST7Bva38NViHmeJZocbtT
-    Vdal5TNnF7F s5tB4AOzosAN7lsWPlMolMTLUG53EluCwyFMvSXUtcaXq0GuuZnzsS6NZLtaxIp1e4RzeIapAd7lJImSWNYVceB6bvqtjBMRXeypbzNImSEBAo8nD9W fjXs6Q7roclOdNc6PS1WiHkpsirF1e48mLyYM3hgmMEsIKU3OQJjA0JSsG pWagL9Xjl PVP
-    6OWctzzcqrSY1d2dSxejZ0G3Vwuiao0KkQL1d6BYeTBrPxqsEavDLKuMQBLD4TpzXFBQRQ81YLFwklR91juhZ1YoVo7FWnNvtQJvTT3JH31 S1YIVBwqaSrC6C5jXQhh6 k9nnlYgw7kaD2R9wjAA4zJIAnNnDVg2vVoMbpZ3eJSDEoWtq6aSABGu96NKs3QuYX6N88F
-    DlsxbTXv020znL1qTGfaVuDNQ3yZHLWm2ljJu4lg280PLQ2BKuOINFw 1Lb7a1a7Z1g1sDxswlli5OIrlzWlFAl2KJNhxkjJREcUINsYghbX9pCbFXbgHihZTcITe9F918qw8xTXKXJvj4h3neBSePP7eekY0o N1SZPIHN2yJsAGgAAorxZGdGB2oXXYTUsbic47ad8"""
-
-    # Timing BPETokeniser
-    time_tokeniser = timeit.timeit(
-        stmt="time_create_encoding(BPETokeniser, data)",
-        globals=globals(),
-        number=10 
-    )
-
-    print(f"BPETokeniser time: {time_tokeniser:.6f} seconds (average over 10 runs)")
+    tokeniser = BPETokeniser(20_000)
+    tokeniser.load('byte-pair-encoding20000.pkl')
+    test_text = "Hi, how are you?"
+    tokens = tokeniser.encode(test_text)
+    print(f"Tokens: {tokens}")
+    print(f"Decoded: {tokeniser.decode(tokens)}")
