@@ -1,17 +1,15 @@
-from datasets import load_dataset
-from preprocess import get_text
-
+from dataset import Dataset
 from BPEtokeniser import BPETokeniser
 
-tokeniser_path = 'byte-pair-encoding10000.pkl'
+tokeniser = BPETokeniser(num_merges=20_000)
+dataset = Dataset(tokeniser=tokeniser, context_size=None, batch_size=None, device=None, train=True)
 
-dataset = load_dataset("daily_dialog", trust_remote_code=True)
-tokeniser = BPETokeniser(num_merges=10_000)
+tokeniser_path = 'byte-pair-encoding20000.pkl'
 
 tokeniser.create_encoding(
-    data=get_text(dataset, train=True), 
+    data=dataset.get_text(), 
     min_freq=5, 
     file_path=tokeniser_path
 )
 
-print('Tokeniser has been created.')
+print('\rTokeniser has been created.')
