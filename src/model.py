@@ -7,12 +7,22 @@ class GPTModel(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, context_size, num_heads, num_layers, device, projection=4, dropout=0.1):
         super().__init__()
+        self.num_layers = num_layers
         self.context_size = context_size
         self.device = device
 
         self.embedding = Embedding(vocab_size, embedding_dim, context_size, dropout)
         self.blocks = nn.Sequential(*[Block(embedding_dim, num_heads, device, projection, dropout) for _ in range(num_layers)])
         self.out_projection = nn.Linear(embedding_dim, vocab_size, bias=False)
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std = 0.02 / math.sqrt(2 * self.num_layers)
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.bias is not None:
+                module.bias.data.zero_()          
 
     def forward(self, x):
         x = self.embedding(x)
@@ -23,19 +33,18 @@ class GPTModel(nn.Module):
     def generate(self, tokeniser, text, temperature, k, max_new_tokens):
 
         # Encodes the text and adjusts size to context_size
-        context = tokeniser.encode(text)[-self.context_size:]        
-        context.to(self.device)
+        text = tokeniser.eos_token + text
+        context = tokeniser.encode(text)[-self.context_size:].to(self.device)
 
         output = ''
         for _ in range(max_new_tokens):
 
             # Passes through model and takes the last token
-            context = context[:, -self.context_size:] 
-            logits = self.forward(context)[:, -1, :] 
-            logits[:, 0] = float('-inf')
+            context = context[:, -self.context_size:]
+            logits = self.forward(context)[:, -1, :]
 
             # Uses temperature to scale the logits for softmax
-            logits = logits / temperature           
+            logits = logits / temperature
             probs = F.softmax(logits, dim=-1)
 
             # Uses top-k sampling to get the next token
@@ -56,13 +65,14 @@ class Embedding(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, context_size, dropout):
         super().__init__()
-        self.token_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
-        self.positional_embedding = PositionalEncoding(context_size, embedding_dim)
+        self.context_size = context_size
+        self.token_embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.positional_encoding = PositionalEncoding(context_size, embedding_dim)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
         x = self.token_embedding(x)
-        x = self.positional_embedding(x)
+        x = self.positional_encoding(x)
         return self.dropout(x)
 
 class PositionalEncoding(nn.Module):
@@ -118,10 +128,10 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x):
         B, T, C = x.size()
 
-        mask = torch.tril(torch.ones(T, T, device=self.device)).view(1, 1, T, T)
+        mask = torch.tril(torch.ones(T, T, device=self.device, dtype=torch.long)).view(1, 1, T, T)
 
         qkv = self.attn(x)
-        q, k, v = qkv.split(self.embedding_dim, dim=2)
+        q, k, v = qkv.chunk(3, dim=2)
 
         # (B, num_heads, T, head_size)
         k = k.view(B, T, self.num_heads, self.head_size).transpose(1, 2)

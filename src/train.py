@@ -1,110 +1,88 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from dataclasses import dataclass
+import time
 
-from data.GPT2tokeniser import GPTtokenizer
-from data.dataset import Dataset
+from GPT2tokeniser import GPTtokenizer
+from dataset import FineWeb
 from model import GPTModel
 
 def calculate_loss(xb: torch.Tensor, yb: torch.Tensor) -> torch.Tensor:
     B, T, C = xb.shape
     xb = xb.view(B*T, C)
     yb = yb.view(B*T)
-    loss = F.cross_entropy(xb, yb, ignore_index=0)
-    return loss
+    loss = F.cross_entropy(xb, yb)
+    return loss 
 
-def calculate_val_loss(val_size: int) -> torch.Tensor:
-    with torch.no_grad():
-        val_loss = 0
-        val_dataset = Dataset(tokeniser=tokeniser, context_size=context_size, batch_size=batch_size, device=device, train=False) 
-        for idx in range(val_size // batch_size):
-            xb, yb = val_dataset.__getitem__(idx)
-            val_data = model(xb)
-            val_loss += calculate_loss(val_data, yb)
-
-        return (val_loss / (val_size // batch_size))
-
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'
 torch.manual_seed(411)
-if device == 'cuda':
+
+if torch.cuda.is_available():
+    device = 'cuda'
     torch.cuda.manual_seed(411)
 
-embedding_dim = 768
-context_size = 256
-num_heads = 12
-num_layers = 12
+@dataclass
+class config:
+    embedding_dim: int = 768
+    context_size: int = 256
+    num_heads: int = 12
+    num_layers: int = 12
 
-batch_size = 32
-learning_rate = 3e-4
-epochs = 5
-max_iters = 11118       # Number of training samples
-val_iter = 1000         # Number of iterations before each validation
-val_size = 100          # Number of samples to validate
+batch_size = 16                         # Number of samples in each batch (16 to prevent CUDA memory errors)
+learning_rate = 2e-4
+max_lr = 6e-4
+inference_iter = 100                    # Number of iterations before inference
+save_iter = 100_000                     # Number of iterations before saving the model
 
 # Load the dataset & tokeniser
 tokeniser = GPTtokenizer()
-dataset = Dataset(tokeniser=tokeniser, context_size=context_size, batch_size=batch_size, device=device) 
+dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, device=device) 
+total_steps = len(dataset)
 
-model = GPTModel(tokeniser.vocab_size, embedding_dim, context_size, num_heads, num_layers, device, dropout=0.2)
+model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device, dropout=0.2)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer, 
-    max_lr=learning_rate,
-    total_steps=max_iters*epochs,
+    max_lr=max_lr,
+    total_steps=total_steps,
     pct_start=0.3, 
     anneal_strategy='cos'
 )
+scaler = torch.amp.GradScaler(device) 
 m = model.to(device)
 
-min_val_loss = float('inf')
+for current_step in range(total_steps):
 
-for epoch in range(epochs):
+    start_time = time.time()
 
-    total_loss = 0
-    epoch_iter = 0
+    # Collect the sample of data for that batch
+    xb, yb = dataset.__getbatch__(current_step)
 
-    for current_iter in range(max_iters // batch_size):
+    optimizer.zero_grad()
 
-        # Collect the sample of data for that batch
-        xb, yb = dataset.__getbatch__(current_iter)
-
-        # Completes forward & backward pass
-        optimizer.zero_grad()
-
+    with torch.amp.autocast(device, dtype=torch.float16):
         out = model(xb)
         loss = calculate_loss(out, yb)
+    scaler.scale(loss).backward()
 
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
+    scaler.step(optimizer)
+    scheduler.step()
+    scaler.update()
 
-        # Uses total loss to get a smoother loss curve
-        epoch_iter += 1 
-        total_loss += loss
-        print(f"\rbatch={current_iter+1}/{max_iters} loss={total_loss/(epoch_iter):.4f}", end='')
+    total_time = time.time() - start_time
+    
+    print(f"batch: {current_step+1}/{total_steps} | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms") 
 
-        if (current_iter + 1) % val_iter == 0:      
+    if not (current_step + 1) % inference_iter:
+        print(model.generate(tokeniser, '', temperature=0.7, k=20, max_new_tokens=100))
 
-            val_loss = calculate_val_loss(val_size=val_size)
+    if not (current_step + 1) % save_iter:
 
-            # Only saves the model if it performs better than the previous best
-            if  min_val_loss > val_loss:
-                min_val_loss = val_loss
-
-                checkpoint = {
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                }
-                torch.save(checkpoint, 'model_checkpoint.pth')
-
-            print(f"\rbatch={current_iter+1}/{max_iters} loss={total_loss/(epoch_iter):.4f} val_loss={val_loss:.4f}")
-
-            # Resets the total loss and epoch_iter after every validation 
-            # Otherwise total loss is skewed by earlier batches
-            total_loss = 0
-            epoch_iter = 0
-            
-    print('')
-
-torch.save(model.state_dict(), 'model_weights.pth')
+        checkpoint = {
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),                
+            'scheduler_state_dict': scheduler.state_dict(),
+            'scaler_state_dict': scaler.state_dict()
+        }
+        torch.save(checkpoint, 'model_checkpoint.pth')

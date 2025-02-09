@@ -3,7 +3,7 @@ from transformers import GPT2Tokenizer
 class GPTtokenizer():
 
     def __init__(self):
-        self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2", clean_up_tokenization_spaces=True)
+        self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2", clean_up_tokenization_spaces=True, verbose=False)
         self.vocab_size = self.tokenizer.vocab_size
         self.eos_token = '<|endoftext|>'
 
