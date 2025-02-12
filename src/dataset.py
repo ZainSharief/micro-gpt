@@ -1,7 +1,6 @@
 import torch
-
 from datasets import load_dataset
-    
+
 class FineWeb(torch.utils.data.Dataset):
     def __init__(self, tokeniser, context_size, batch_size, device):
         self.data = load_dataset("HuggingFaceFW/fineweb-edu", name='sample-10BT', trust_remote_code=True, split='train')
@@ -14,7 +13,7 @@ class FineWeb(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getbatch__(self, idx):
-        text = self.tokeniser.eos_token + self.data[idx]['text'] + self.tokeniser.eos_token
+        text = self.data[idx]['text']
         tokens = self.tokeniser.encode(text)
 
         x = tokens[:, :-1]
