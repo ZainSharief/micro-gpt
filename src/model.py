@@ -142,7 +142,7 @@ class RotaryPositionalEmbedding(nn.Module):
     def __init__(self, dim, max_seq_len):
         super(RotaryPositionalEmbedding, self).__init__()
 
-        theta = (10_000 ** ((-2 * torch.arange(0, dim, 2, dtype=torch.float)) / dim)).unsqueeze(0)
+        theta = (10_000 ** ((-2 * torch.arange(0, dim//2, dtype=torch.float)) / dim)).unsqueeze(0)
         position = torch.arange(max_seq_len, dtype=torch.float).unsqueeze(1)
         angles = position * theta
 
