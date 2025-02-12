@@ -11,4 +11,4 @@ class GPTtokenizer():
         return self.tokenizer.encode(data, return_tensors="pt")
 
     def decode(self, tokens):
-        return self.tokenizer.decode(tokens, skip_special_tokens=True)
+        return self.tokenizer.decode(tokens, errors="replace")

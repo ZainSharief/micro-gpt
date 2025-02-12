@@ -13,17 +13,17 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(411)
 
 temperature = 0.7
-k = 15
+k = 20
 
 tokeniser = GPTtokenizer()
 model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device, dropout=0.2)
 m = model.to(device)
 
-checkpoint = torch.load('model_checkpoint.pth', map_location=device, weights_only=True)
+checkpoint = torch.load('model_checkpoint200000.pth', map_location=device, weights_only=True)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 
-conversation = "<|endoftext|>"
+conversation = ''
 while True:
 
     user_text = input('YOU: ')
