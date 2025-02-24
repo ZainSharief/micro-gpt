@@ -54,7 +54,7 @@ class GPTModel(nn.Module):
             logits = self.transformer.lm_head(x)
             loss = self.calculate_loss(logits, targets)
         else:
-            logits = self.lm_head(x[:, -1, :])
+            logits = self.transformer.lm_head(x[:, -1, :])
             loss = None
 
         return logits, loss

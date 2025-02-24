@@ -17,7 +17,7 @@ if torch.cuda.is_available():
 
 @dataclass
 class config:
-    embedding_dim: int = 1024
+    embedding_dim: int = 768
     context_size: int = 256
     num_heads: int = 16
     num_layers: int = 12
@@ -26,15 +26,15 @@ class config:
 def main():
     
     batch_size = 8                          # Number of samples in each batch (16 to prevent CUDA memory errors)
-    grad_acc_size = 4
+    grad_acc_size = 8
     learning_rate = 2e-4
     max_lr = 4e-4
-    inference_iter = 5_000                  # Number of iterations before inference
-    save_iter = 50_000                      # Number of iterations before saving the model
+    inference_iter = 1_000                  # Number of iterations before inference
+    save_iter = 5_000                       # Number of iterations before saving the model
 
     # Load the dataset & tokeniser
     tokeniser = GPTtokenizer()
-    dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, device=device) 
+    dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, size=172_000*grad_acc_size, device=device) 
     total_steps = len(dataset) - (len(dataset) % grad_acc_size)
 
     model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=0.2)
@@ -75,10 +75,10 @@ def main():
     
         print(f"\rbatch: {(current_batch//grad_acc_size)+1}/{total_steps//grad_acc_size} | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms", end='') 
         
-        if (current_batch + 1) % inference_iter == 0:
-            print('\n' + model.generate(tokeniser, '', temperature=0.7, k=20, max_new_tokens=100, device=device))
+        if ((current_batch//grad_acc_size) + 1) % inference_iter == 0:
+            print('\n' + model.generate(tokeniser, 'The best way to greet someone is to say', temperature=0.7, k=20, max_new_tokens=100, device=device))
 
-        if (current_batch + 1) % save_iter == 0:
+        if ((current_batch//grad_acc_size) + 1) % save_iter == 0:
 
             checkpoint = {
                 'model_state_dict': model.state_dict(),
