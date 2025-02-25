@@ -1,3 +1,6 @@
+# Virtual Environment
+.venv
+
 # Byte-compiled
 .DS_Store
 __pycache__/

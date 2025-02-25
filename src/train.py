@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from dataclasses import dataclass
 import time
 
-from GPT2tokeniser import GPTtokenizer
+from config import config
+from tokenizer import GPTtokenizer
 from dataset import FineWeb
 from model import GPTModel
 
@@ -14,14 +14,6 @@ torch.manual_seed(411)
 if torch.cuda.is_available():
     device = 'cuda'
     torch.cuda.manual_seed(411)
-
-@dataclass
-class config:
-    embedding_dim: int = 768
-    context_size: int = 256
-    num_heads: int = 16
-    num_layers: int = 12
-    max_norm: float = 1.0
 
 def main():
     
@@ -37,7 +29,7 @@ def main():
     dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, size=172_000*grad_acc_size, device=device) 
     total_steps = len(dataset) - (len(dataset) % grad_acc_size)
 
-    model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=0.2)
+    model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=config.dropout)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
@@ -48,7 +40,6 @@ def main():
     )
     scaler = torch.amp.GradScaler(device) 
     model = model.to(device)
-    model = torch.compile(model)
 
     for current_batch in range(0, total_steps, grad_acc_size):
 
@@ -57,7 +48,6 @@ def main():
 
         for current_step in range(current_batch, current_batch+grad_acc_size):
 
-            # Collect the sample of data for that batch
             xb, yb = dataset.__getbatch__(current_step)
 
             with torch.amp.autocast(device, dtype=torch.float16):
@@ -76,7 +66,7 @@ def main():
         print(f"\rbatch: {(current_batch//grad_acc_size)+1}/{total_steps//grad_acc_size} | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms", end='') 
         
         if ((current_batch//grad_acc_size) + 1) % inference_iter == 0:
-            print('\n' + model.generate(tokeniser, 'The best way to greet someone is to say', temperature=0.7, k=20, max_new_tokens=100, device=device))
+            print('\n' + model.generate(tokeniser, 'The best way to greet someone is to say', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
 
         if ((current_batch//grad_acc_size) + 1) % save_iter == 0:
 
