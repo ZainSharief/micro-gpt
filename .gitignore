@@ -5,6 +5,10 @@
 .DS_Store
 __pycache__/
 
+# Package files
+*.egg
+*.egg-info
+
 # Pickle
 *.pkl
 

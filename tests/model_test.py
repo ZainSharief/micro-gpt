@@ -1,11 +1,15 @@
 import torch 
 
-from ..src.tokenizer import GPTtokenizer
-from ..src.model import GPTModel
-from ..src.config import config
+from src.tokenizer import GPTtokenizer
+from src.model import GPTModel
+from src.config import config
 
 device = 'cpu'
 torch.manual_seed(411)
+
+if torch.mps.is_available():
+    device = 'mps'
+    torch.mps.manual_seed(411)
 
 if torch.cuda.is_available():
     device = 'cuda'
@@ -15,8 +19,8 @@ tokeniser = GPTtokenizer()
 model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=config.dropout)
 m = model.to(device)
 
-checkpoint = torch.load(config.model_path, map_location=device, weights_only=True)
-model.load_state_dict(checkpoint['model_state_dict'])
+final_weights = torch.load(config.model_path, map_location=device, weights_only=True)
+model.load_state_dict(final_weights)
 model.eval()
 
 def main():
@@ -36,11 +40,13 @@ def main():
                 temperature=config.temperature, 
                 k=config.k,
                 max_new_tokens=100,
+                device=device
             )
 
             conversation += model_text
 
             print('MicroGPT: ' + model_text)
+            print(tokeniser.encode(model_text))
 
 if __name__ == '__main__':
     main()
