@@ -63,9 +63,9 @@ class GPTModel(nn.Module):
     def generate(self, tokeniser, text, temperature, k, max_new_tokens, device):
 
         # Encodes the text and adjusts size to context_size
-        context = tokeniser.encode(text)[-self.context_size:].to(device)
+        context = tokeniser.encode(text)[:, -self.context_size:].to(device)
+        output = []
 
-        output = ''
         for _ in range(max_new_tokens):
 
             # Passes through model and takes the last token
@@ -77,14 +77,14 @@ class GPTModel(nn.Module):
             probs = F.softmax(logits, dim=-1)
 
             # Uses top-k sampling to get the next token
-            probs, idxs = torch.topk(probs, k)   
+            probs, idxs = torch.topk(probs, k)
+
             idx = idxs[0][torch.multinomial(probs, 1)]
             
             context = torch.cat((context, idx), dim=1)
-            idx = idx[0].int()
-            output += tokeniser.decode(idx)
+            output.append(idx[0][0].int())
             
-        return output
+        return tokeniser.decode(output)
 
 class Block(nn.Module):
 

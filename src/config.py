@@ -9,8 +9,8 @@ class config:
     max_norm: float = 1.0
     dropout: float = 0.2
 
-    k: int = 20
+    k: int = 50
     p: float = 0.9
-    temperature: float = 0.7
+    temperature: float = 1.2
 
-    model_path: str = 'model_checkpoint75000.pth'
+    model_path: str = 'model_final.pth'

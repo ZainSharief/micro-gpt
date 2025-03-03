@@ -48,7 +48,7 @@ def main():
 
         for current_step in range(current_batch, current_batch+grad_acc_size):
 
-            xb, yb = dataset.__getbatch__(current_step)
+            xb, yb = dataset.__nextbatch__()
 
             with torch.amp.autocast(device, dtype=torch.float16):
                 _, loss = model(xb, yb)
