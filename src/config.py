@@ -13,4 +13,5 @@ class config:
     p: float = 0.9
     temperature: float = 1.2
 
-    model_path: str = 'model_final.pth'
+    base_model_path: str = 'base_model_final.pth'
+    fine_tuned_model_path: str = 'fine_tuned_model_final.pth'
