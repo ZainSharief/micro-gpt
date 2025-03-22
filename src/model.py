@@ -1,18 +1,18 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-import math
 
 class GPTModel(nn.Module):
 
     def __init__(self, vocab_size: int, embedding_dim: int, context_size: int, num_heads: int, num_layers: int, device: str, projection: int = 4, dropout: float = 0.0) -> None:
         super().__init__()
         self.context_size = context_size
+        self.pad_token_id = 0
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(vocab_size, embedding_dim),
             dropout = nn.Dropout(p=dropout),
-            decoder = nn.Sequential(*[Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)]),
+            decoder = nn.ModuleList([Block(embedding_dim, num_heads, context_size, device, projection, dropout) for _ in range(num_layers)]),
             norm = nn.RMSNorm(embedding_dim),
             lm_head = nn.Linear(embedding_dim, vocab_size, bias=False)
         ))
@@ -35,17 +35,20 @@ class GPTModel(nn.Module):
         B, T, C = xb.shape
         xb = xb.view(B*T, C)
         yb = yb.view(B*T)
-        loss = F.cross_entropy(xb, yb)
+        loss = F.cross_entropy(xb, yb, ignore_index=self.pad_token_id)
         return loss 
 
     def forward(self, x, targets=None):
+
+        pad_mask = (x != self.pad_token_id).unsqueeze(1).unsqueeze(2)
 
         # embedding weights
         x = self.transformer.wte(x)
         x = self.transformer.dropout(x)
 
         # passing through attention & mlp blocks
-        x = self.transformer.decoder(x)
+        for layer in self.transformer.decoder:
+            x = layer(x, pad_mask)
 
         # normalisation and out prediction
         x = self.transformer.norm(x)
@@ -98,8 +101,8 @@ class Block(nn.Module):
         self.mlp = MLP(embedding_dim, projection)
         self.dropout_2 = nn.Dropout(dropout)
 
-    def forward(self, x):
-        x = x + self.dropout_1(self.multiheadattention(self.rmsnorm_1(x)))
+    def forward(self, x, pad_mask=None):
+        x = x + self.dropout_1(self.multiheadattention(self.rmsnorm_1(x), pad_mask))
         x = x + self.dropout_2(self.mlp(self.rmsnorm_2(x)))
         return x
 
@@ -107,7 +110,7 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, embedding_dim, num_heads, context_size, device, flash: bool = True, dropout: float = 0.0):
         super().__init__()
-        self.flash = flash
+        self.dropout = dropout
 
         assert embedding_dim % num_heads == 0, 'embedding_dim must be divisible by num_heads'
 
@@ -117,14 +120,10 @@ class MultiHeadAttention(nn.Module):
 
         self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
         self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
-        self.dropout = nn.Dropout(dropout)
-
-        mask = torch.tril(torch.ones(context_size, context_size, device=device, dtype=torch.long)).unsqueeze(0).unsqueeze(1)
-        self.register_buffer("mask", mask)
 
         self.rope = RotaryPositionalEmbedding(embedding_dim, context_size)
 
-    def forward(self, x):
+    def forward(self, x, pad_mask=None):
         B, T, C = x.size()
 
         q, k, v = self.attn(x).split(self.embedding_dim, dim=2)
@@ -137,16 +136,10 @@ class MultiHeadAttention(nn.Module):
         k = k.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
         v = v.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
 
-        if self.flash:
-            x = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        attn_mask = torch.ones(q.size(-2), k.size(-2), dtype=torch.bool, device=x.device).tril(diagonal=0)
+        attn_mask = attn_mask if pad_mask is None else attn_mask & pad_mask
 
-        else:
-            wei = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_size))
-            wei = wei.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
-            wei = F.softmax(wei, dim=-1)
-            wei = self.dropout(wei)
-            x = wei @ v
-            
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.dropout)
         x = x.transpose(1, 2).contiguous().view(B, T, C)
         x = self.proj(x)
         return x
