@@ -1,39 +1,6 @@
 import torch
 from datasets import load_dataset
 
-class FineWeb(torch.utils.data.Dataset):
-    def __init__(self, tokeniser, context_size, batch_size, device):
-        self.data = load_dataset("HuggingFaceFW/fineweb-edu", name='sample-10BT', trust_remote_code=True, split='train')
-        self.tokeniser = tokeniser
-        self.context_size = context_size
-        self.batch_size = batch_size
-        self.device = device
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        text = self.data[idx]['text']
-        tokens = self.tokeniser.encode(text)
-
-        x = tokens[:, :-1]
-        y = tokens[:, 1:]
-
-        B, T = x.size()
-
-        if T <= self.context_size:
-            pad = torch.zeros((B, self.context_size - T), device=x.device, dtype=x.dtype)
-            x = torch.cat([x, pad], dim=1)
-            y = torch.cat([y, pad], dim=1)
-        else:
-            start = torch.randint(0, T - self.context_size, (1,), device=x.device)
-
-            x = x[:, start:start+self.context_size]
-            y = y[:, start:start+self.context_size]
-
-        x, y = x.to(self.device), y.to(self.device)
-        return x.squeeze(0), y.squeeze(0)
-    
 class OpenAssistant(torch.utils.data.Dataset):
     def __init__(self, tokeniser, context_size, batch_size, device, pad_token_id=0):
         self.tokeniser = tokeniser
@@ -69,20 +36,21 @@ class OpenAssistant(torch.utils.data.Dataset):
         prompt_tokens = self.tokeniser.encode(text['prompt'])
         response_tokens = self.tokeniser.encode(text['response'])
         prompt_length = prompt_tokens.size()[-1]
+        og = prompt_length
         response_length = response_tokens.size()[-1]
 
         if prompt_length + response_length + 1 < self.context_size:
 
             x = torch.cat([
-                prompt_tokens, 
+                prompt_tokens.to(self.device), 
                 torch.tensor(self.tokeniser.eos_token, dtype=torch.long, device=self.device).reshape([1, 1]), 
-                response_tokens, 
+                response_tokens.to(self.device), 
                 torch.zeros([1, self.context_size - (prompt_length + response_length + 1)], device=self.device, dtype=torch.long)
             ], dim=-1)
 
             y = torch.cat([
                 torch.zeros([1, prompt_length], dtype=torch.long, device=self.device),
-                response_tokens,
+                response_tokens.to(self.device),
                 torch.zeros([1, self.context_size - (prompt_length + response_length)], device=self.device, dtype=torch.long)
             ], dim=-1)
 
@@ -94,14 +62,14 @@ class OpenAssistant(torch.utils.data.Dataset):
             prompt_length = self.context_size - 1 
 
         x = torch.cat([
-            prompt_tokens, 
+            prompt_tokens.to(self.device), 
             torch.tensor(self.tokeniser.eos_token, dtype=torch.long, device=self.device).reshape([1, 1]), 
-            response_tokens
+            response_tokens.to(self.device)
         ], dim=-1)
 
         y = torch.cat([
-            torch.zeros([1, prompt_length], dtype=torch.long, device=self.device),
-            response_tokens
+            torch.zeros([1, prompt_length+1], dtype=torch.long, device=self.device),
+            response_tokens.to(self.device)
         ], dim=-1)
 
         if x.size()[-1] > self.context_size:

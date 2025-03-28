@@ -1,7 +1,7 @@
 import torch 
 
 from src.tokenizer import GPTtokenizer
-from src.model import GPTModel
+from src.pre_train.model import GPTModel
 from src.config import config
 
 device = 'cpu'
@@ -19,12 +19,14 @@ tokeniser = GPTtokenizer()
 model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=config.dropout)
 m = model.to(device)
 
-final_weights = torch.load(config.model_path, map_location=device, weights_only=True)
+final_weights = torch.load(config.base_model_path, map_location=device)
 model.load_state_dict(final_weights)
 model.eval()
 
 def main():
-
+    with torch.no_grad():
+        print(model.generate(tokeniser, 'The best way to greet someone is to say', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
+    
     conversation = ''
     while True:
 

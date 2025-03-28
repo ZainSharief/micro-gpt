@@ -66,7 +66,7 @@ class GPTModel(nn.Module):
     def generate(self, tokeniser, text, temperature, k, max_new_tokens, device):
 
         # Encodes the text and adjusts size to context_size
-        context = tokeniser.encode(text)[:, -self.context_size:].to(device)
+        context = torch.cat([tokeniser.encode(text)[:, -self.context_size+1:].to(device), torch.tensor(tokeniser.eos_token, dtype=torch.long, device=device).reshape([1, 1])], dim=-1)
         output = []
 
         for _ in range(max_new_tokens):
@@ -143,6 +143,30 @@ class MultiHeadAttention(nn.Module):
         x = x.transpose(1, 2).contiguous().view(B, T, C)
         x = self.proj(x)
         return x
+    
+class LoRALinear(nn.Module):
+    def __init__(self, linear_layer, rank, alpha, lora_dropout=0.1):
+        super().__init__()
+        
+        self.linear = linear_layer
+        
+        self.in_features = self.linear.in_features
+        self.out_features = self.linear.out_features
+        self.rank = rank
+        self.alpha = alpha
+        
+        std_dev = 1 / torch.sqrt(torch.tensor(self.rank).float())
+        
+        self.A = nn.Parameter(torch.randn(self.in_features, self.rank) * std_dev)
+        self.B = nn.Parameter(torch.zeros(self.rank, self.out_features))
+        self.dropout = nn.Dropout(lora_dropout)
+        
+    def forward(self, x):
+        
+        x1 = self.linear(x)
+        x2 = self.alpha * (x @ self.A @ self.B)
+        x2 = self.dropout(x2)
+        return x1 + x2
 
 class RotaryPositionalEmbedding(nn.Module):
 
@@ -176,3 +200,15 @@ class MLP(nn.Module):
 
     def forward(self, x):
         return self.feedforward(x)
+    
+
+if __name__ == '__main__':
+
+    from src.config import config
+    from src.tokenizer import GPT2Tokenizer
+
+    tokeniser = GPT2Tokenizer()
+    model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device='cpu', dropout=0.2)
+
+    lora_model_params = sum([p.numel() for p in model.parameters()])
+    trainable_params = sum([p.numel() for p in model.parameters() if p.requires_grad])

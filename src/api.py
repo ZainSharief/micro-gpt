@@ -2,9 +2,9 @@ import torch
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from .model import GPTModel
-from .tokenizer import GPTtokenizer
-from .config import config
+from src.pre_train.model import GPTModel
+from src.tokenizer import GPTtokenizer
+from src.config import config
 
 device = 'cpu'
 torch.manual_seed(411)

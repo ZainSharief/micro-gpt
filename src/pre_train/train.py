@@ -2,10 +2,10 @@ import torch
 from torch.utils.data import DataLoader
 import time
 
-from tokenizer import GPTtokenizer
-from dataset import OpenAssistant
+from src.tokenizer import GPTtokenizer
+from src.config import config
+from dataset import FineWeb
 from model import GPTModel
-from config import config
 
 def main():
 
@@ -16,15 +16,15 @@ def main():
         device = 'cuda'
         torch.cuda.manual_seed(411)
 
-    batch_size = 32                         # Number of samples in each batch (16 to prevent CUDA memory errors)
-    learning_rate = 1e-5
-    max_lr = 5e-5
+    batch_size = 64                         # Number of samples in each batch 
+    learning_rate = 2e-4
+    max_lr = 4e-4
     inference_iter = 5_000                 # Number of iterations before inference
     save_iter = 10_000                      # Number of iterations before saving the model
 
     # Load the dataset & tokeniser
     tokeniser = GPTtokenizer()
-    dataset = OpenAssistant(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, device=device) 
+    dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, device=device) 
     total_steps = len(dataset) // batch_size
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -41,8 +41,6 @@ def main():
     )
     scaler = torch.amp.GradScaler(device)
     model = model.to(device)
-
-    model.load_state_dict(torch.load(config.base_model_path, map_location=device, weights_only=True))
     
     for current_batch in range(total_steps):
 
@@ -67,7 +65,7 @@ def main():
         print(f"\rbatch: {current_batch+1}/{total_steps} | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms", end='') 
         
         if (current_batch + 1) % inference_iter == 0:
-            print('\n' + model.generate(tokeniser, 'What is the best way to greet someone?', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
+            print('\n' + model.generate(tokeniser, 'When I go to the shops, I usually buy', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
 
         if (current_batch + 1) % save_iter == 0:
 
@@ -79,7 +77,7 @@ def main():
             }
             torch.save(checkpoint, f'model_checkpoint{current_batch+1}.pth')
                 
-    torch.save(model.state_dict(), config.fine_tuned_model_path)
+    torch.save(model.state_dict(), config.base_model_path)
 
 if __name__ == '__main__':
     main()
