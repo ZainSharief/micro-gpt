@@ -9,6 +9,9 @@ class config:
     max_norm: float = 1.0
     dropout: float = 0.1
 
+    lora_rank: int = 16
+    lora_alpha: float = 16
+
     k: int = 40
     p: float = 0.9
     temperature: float = 0.6

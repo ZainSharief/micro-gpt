@@ -66,7 +66,7 @@ class GPTModel(nn.Module):
     def generate(self, tokeniser, text, temperature, k, max_new_tokens, device):
 
         # Encodes the text and adjusts size to context_size
-        context = torch.cat([tokeniser.encode(text)[:, -self.context_size+1:].to(device), torch.tensor(tokeniser.eos_token, dtype=torch.long, device=device).reshape([1, 1])], dim=-1)
+        context = tokeniser.encode(text)[:, -self.context_size:].to(device)
         output = []
 
         for _ in range(max_new_tokens):
@@ -94,7 +94,7 @@ class Block(nn.Module):
     def __init__(self, embedding_dim, num_heads, context_size, device, projection=4, dropout=0.1):
         super().__init__()
         self.rmsnorm_1 = nn.RMSNorm(embedding_dim)
-        self.multiheadattention = MultiHeadAttention(embedding_dim, num_heads, context_size, device, dropout=dropout)
+        self.multiheadattention = MultiHeadAttention(embedding_dim, num_heads, context_size,dropout=dropout)
         self.dropout_1 = nn.Dropout(dropout)
 
         self.rmsnorm_2 = nn.RMSNorm(embedding_dim)
@@ -108,7 +108,7 @@ class Block(nn.Module):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, embedding_dim, num_heads, context_size, device, flash: bool = True, dropout: float = 0.0):
+    def __init__(self, embedding_dim, num_heads, context_size, dropout: float = 0.0):
         super().__init__()
         self.dropout = dropout
 
@@ -118,7 +118,7 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.embedding_dim = embedding_dim
 
-        self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
+        self.attn = LoRALinear(self.embedding_dim, 3 * self.embedding_dim, config.lora_rank, config.lora_alpha, lora_dropout=dropout)
         self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
 
         self.rope = RotaryPositionalEmbedding(embedding_dim, context_size)
@@ -145,20 +145,17 @@ class MultiHeadAttention(nn.Module):
         return x
     
 class LoRALinear(nn.Module):
-    def __init__(self, linear_layer, rank, alpha, lora_dropout=0.1):
+    def __init__(self, in_features: int, out_features: int, rank: int, alpha: float, lora_dropout: float = 0.1):
         super().__init__()
         
-        self.linear = linear_layer
-        
-        self.in_features = self.linear.in_features
-        self.out_features = self.linear.out_features
+        self.linear = nn.Linear(in_features, out_features)
         self.rank = rank
         self.alpha = alpha
         
         std_dev = 1 / torch.sqrt(torch.tensor(self.rank).float())
         
-        self.A = nn.Parameter(torch.randn(self.in_features, self.rank) * std_dev)
-        self.B = nn.Parameter(torch.zeros(self.rank, self.out_features))
+        self.A = nn.Parameter(torch.randn(in_features, self.rank) * std_dev)
+        self.B = nn.Parameter(torch.zeros(self.rank, out_features))
         self.dropout = nn.Dropout(lora_dropout)
         
     def forward(self, x):
@@ -201,14 +198,21 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.feedforward(x)
     
+if __name__ == "__main__":
+    
+    from config import config
+    from tokenizer import GPTtokenizer
 
-if __name__ == '__main__':
+    tokeniser = GPTtokenizer()
+    model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, 'cpu', dropout=config.dropout)
 
-    from src.config import config
-    from src.tokenizer import GPT2Tokenizer
+    for param in model.parameters():
+        param.requires_grad = False
 
-    tokeniser = GPT2Tokenizer()
-    model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device='cpu', dropout=0.2)
+    for name, module in model.named_modules():
+        if isinstance(module, LoRALinear):
+            for param in module.parameters():
+                param.requires_grad = True  
 
-    lora_model_params = sum([p.numel() for p in model.parameters()])
-    trainable_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total trainable parameters: {trainable_params}")
