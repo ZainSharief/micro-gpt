@@ -16,38 +16,33 @@ def main():
         device = 'cuda'
         torch.cuda.manual_seed(411)
 
-    batch_size = 64                         # Number of samples in each batch 
+    batch_size = 32                        # Number of samples in each batch 
     learning_rate = 2e-4
-    max_lr = 4e-4
+    max_lr = 6e-4
     inference_iter = 5_000                 # Number of iterations before inference
-    save_iter = 10_000                      # Number of iterations before saving the model
+    save_iter = 10_000                     # Number of iterations before saving the model
 
     # Load the dataset & tokeniser
     tokeniser = GPTtokenizer()
-    dataset = FineWeb(tokeniser=tokeniser, context_size=config.context_size, batch_size=batch_size, device=device) 
-    total_steps = len(dataset) // batch_size
-
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    data_iter = iter(dataloader)
+    dataset = FineWeb(tokenizer=tokeniser, context_size=config.context_size, device=device) 
+    dataloader = DataLoader(dataset, batch_size=batch_size)
 
     model = GPTModel(tokeniser.vocab_size, config.embedding_dim, config.context_size, config.num_heads, config.num_layers, device=device, dropout=config.dropout)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
         max_lr=max_lr,
-        total_steps=total_steps,
+        total_steps=1_000_000,
         pct_start=0.1, 
         anneal_strategy='cos'
     )
     scaler = torch.amp.GradScaler(device)
     model = model.to(device)
     
-    for current_batch in range(total_steps):
+    for current_batch, (xb, yb) in enumerate(dataloader):
 
         start_time = time.time()
         optimizer.zero_grad(set_to_none=True)
-
-        xb, yb = next(data_iter)
 
         with torch.autocast(device_type=device, dtype=torch.float16):
             _, loss = model(xb, yb)
@@ -62,7 +57,7 @@ def main():
 
         total_time = time.time() - start_time
     
-        print(f"\rbatch: {current_batch+1}/{total_steps} | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms", end='') 
+        print(f"\rbatch: {current_batch+1}/1,000,000 | loss: {loss:.4f} | lr: {scheduler.get_last_lr()[0]:.4e} | step_time: {int(total_time*1000)}ms", end='') 
         
         if (current_batch + 1) % inference_iter == 0:
             print('\n' + model.generate(tokeniser, 'When I go to the shops, I usually buy', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))

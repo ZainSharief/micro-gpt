@@ -1,36 +1,32 @@
 import torch
 from datasets import load_dataset
+from torch.utils.data import IterableDataset
 
-class FineWeb(torch.utils.data.Dataset):
-    def __init__(self, tokeniser, context_size, batch_size, device):
-        self.data = load_dataset("HuggingFaceFW/fineweb-edu", name='sample-10BT', trust_remote_code=True, split='train')
-        self.tokeniser = tokeniser
+class FineWeb(IterableDataset):
+    def __init__(self, tokenizer, context_size, device='cpu'):
+        self.tokenizer = tokenizer
         self.context_size = context_size
-        self.batch_size = batch_size
         self.device = device
+       
+        self.dataset = load_dataset(
+            "HuggingFaceFW/fineweb-edu", 
+            name='sample-10BT', 
+            trust_remote_code=True, 
+            split='train',
+            streaming=True
+        ).shuffle(buffer_size=10_000, seed=411)
 
-    def __len__(self):
-        return len(self.data)
+    def __iter__(self):
 
-    def __getitem__(self, idx):
-        text = self.data[idx]['text']
-        tokens = self.tokeniser.encode(text)
+        for data in self.dataset:
+            input_ids = self.tokenizer.encode(data['text']).squeeze(0)
 
-        x = tokens[:, :-1]
-        y = tokens[:, 1:]
-
-        B, T = x.size()
-
-        if T <= self.context_size:
-            pad = torch.zeros((B, self.context_size - T), device=x.device, dtype=x.dtype)
-            x = torch.cat([x, pad], dim=1)
-            y = torch.cat([y, pad], dim=1)
-        else:
-            start = torch.randint(0, T - self.context_size, (1,), device=x.device)
-
-            x = x[:, start:start+self.context_size]
-            y = y[:, start:start+self.context_size]
-
-        x, y = x.to(self.device), y.to(self.device)
-        return x.squeeze(0), y.squeeze(0)
-    
+            chunks = torch.split(input_ids, self.context_size + 1)
+            
+            for chunk in chunks:
+                if chunk.size(0) < self.context_size + 1:
+                    pad_size = self.context_size + 1 - chunk.size(0)
+                    pad = torch.full((pad_size,), self.tokenizer.pad_token_id, dtype=torch.long)
+                    chunk = torch.cat([chunk, pad])
+                
+                yield chunk[:-1].to(self.device), chunk[1:].to(self.device)
