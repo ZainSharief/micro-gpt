@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import torchtune
 
 class GPTModel(nn.Module):
 
@@ -121,48 +122,33 @@ class MultiHeadAttention(nn.Module):
         self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
         self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
 
-        self.rope = RotaryPositionalEmbedding(embedding_dim, context_size)
+        self.rope = torchtune.modules.RotaryPositionalEmbeddings(dim=self.head_size, max_seq_len=context_size)
 
     def forward(self, x, pad_mask=None):
         B, T, C = x.size()
 
         q, k, v = self.attn(x).split(self.embedding_dim, dim=2)
 
+        # (B, T, num_heads, head_size)
+        q = q.view(B, T, self.num_heads, self.head_size)
+        k = k.view(B, T, self.num_heads, self.head_size)
+        v = v.view(B, T, self.num_heads, self.head_size)
+
         q = self.rope(q)
         k = self.rope(k)
 
         # (B, num_heads, T, head_size)
-        q = q.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
-        k = k.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
-        v = v.view(B, T, self.num_heads, self.head_size).transpose(1, 2)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
 
-        attn_mask = torch.ones(q.size(-2), k.size(-2), dtype=torch.bool, device=x.device).tril(diagonal=0)
+        attn_mask = torch.tril(torch.ones(1, 1, q.size(-2), k.size(-2), dtype=torch.bool, device=x.device))
         attn_mask = attn_mask if pad_mask is None else attn_mask & pad_mask
 
         x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.dropout)
         x = x.transpose(1, 2).contiguous().view(B, T, C)
         x = self.proj(x)
         return x
-
-class RotaryPositionalEmbedding(nn.Module):
-
-    def __init__(self, dim, max_seq_len):
-        super().__init__()
-
-        theta = (10_000 ** ((-2 * torch.arange(0, dim//2, dtype=torch.float)) / dim)).unsqueeze(0)
-        position = torch.arange(max_seq_len, dtype=torch.float).unsqueeze(1)
-        angles = position * theta
-
-        self.register_buffer("cos", torch.cos(angles).unsqueeze(0).unsqueeze(-1))
-        self.register_buffer("sin", torch.sin(angles).unsqueeze(0).unsqueeze(-1))
-
-    def forward(self, x):
-        B, T, C = x.size()
-        x = x.view(B, T, C // 2, 2) 
-        x_rot = torch.cat([-x[..., 1:2], x[..., 0:1]], dim=-1)
-
-        x_out = x * self.cos[:, :T] + x_rot * self.sin[:, :T]
-        return x_out.view(B, T, C)
 
 class MLP(nn.Module):
 
