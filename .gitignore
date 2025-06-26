@@ -1,6 +1,9 @@
 # Virtual Environment
 .venv
 
+# Weights
+weights/
+
 # Byte-compiled
 .DS_Store
 __pycache__/
