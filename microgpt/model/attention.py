@@ -16,8 +16,8 @@ class MultiHeadAttention(nn.Module):
         self.embedding_dim = config.embedding_dim
         self.dropout = config.dropout
 
-        self.attn = LoRALinear(self.embedding_dim, 3 * self.embedding_dim, config.lora_rank, config.lora_alpha) \
-            if use_lora else nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
+        self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
+        self.lora_attn = LoRALinear(self.attn, self.embedding_dim, 3 * self.embedding_dim, config.lora_rank, config.lora_alpha) if use_lora else None
         
         self.rope = RotaryPositionalEmbeddings(dim=self.head_size, max_seq_len=config.context_size)
         self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
@@ -25,7 +25,7 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x, pad_mask=None):
         B, T, C = x.size()
 
-        q, k, v = self.attn(x).split(self.embedding_dim, dim=2)
+        q, k, v = (self.attn(x) if self.lora_attn is None else self.lora_attn(x)).split(self.embedding_dim, dim=2)
 
         # (B, T, num_heads, head_size)
         q = q.view(B, T, self.num_heads, self.head_size)
@@ -83,10 +83,10 @@ class RotaryPositionalEmbeddings(nn.Module):
         return x_out.type_as(x)
     
 class LoRALinear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, rank: int, alpha: float, lora_dropout: float = 0.1):
+    def __init__(self, linear: nn.Linear, in_features: int, out_features: int, rank: int, alpha: float, lora_dropout: float = 0.1):
         super().__init__()
         
-        self.linear = nn.Linear(in_features, out_features)
+        self.linear = linear
         self.rank = rank
         self.alpha = alpha
         

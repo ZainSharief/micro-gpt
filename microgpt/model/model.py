@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.model.attention import MultiHeadAttention
+from microgpt.model.attention import MultiHeadAttention, LoRALinear
 from microgpt.config import Config
 
 class GPTModel(nn.Module):
@@ -20,11 +20,21 @@ class GPTModel(nn.Module):
             lm_head = nn.Linear(config.embedding_dim, config.vocab_size, bias=False)
         ))
 
-        # Weight tying
-        self.transformer.wte.weight = self.transformer.lm_head.weight
+        if use_lora:
+            # Freeze all parameters except LoRA layers
+            for param in self.parameters():
+                param.requires_grad = False
 
-        # Initialise the model weights
-        self.apply(self._init_weights)
+            for module in self.modules():
+                if isinstance(module, LoRALinear):
+                    module.A.requires_grad = True
+                    module.B.requires_grad = True
+        else:
+            # Weight tying
+            self.transformer.wte.weight = self.transformer.lm_head.weight
+
+            # Initialise the model weights
+            self.apply(self._init_weights)
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -34,14 +44,20 @@ class GPTModel(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)       
 
-    def calculate_loss(self, xb, yb):
+    def calculate_loss(self, xb, yb, loss_mask=None):
         B, T, C = xb.shape
         xb = xb.view(B*T, C)
         yb = yb.view(B*T)
-        loss = F.cross_entropy(xb, yb, ignore_index=self.pad_token_id)
-        return loss 
+        loss = F.cross_entropy(xb, yb, ignore_index=self.config.pad_token_id, reduction='none')
 
-    def forward(self, x, targets=None):
+        if loss_mask is None:
+            return loss.mean()
+
+        loss_mask = loss_mask.view(B*T)
+        loss = loss * loss_mask 
+        return loss.sum() / loss_mask.sum().clamp(min=1)
+
+    def forward(self, x, targets=None, loss_mask=None):
 
         pad_mask = (x != self.config.pad_token_id).unsqueeze(1).unsqueeze(2)
 
@@ -58,7 +74,7 @@ class GPTModel(nn.Module):
         
         if targets is not None:
             logits = self.transformer.lm_head(x)
-            loss = self.calculate_loss(logits, targets)
+            loss = self.calculate_loss(logits, targets, loss_mask=loss_mask)
         else:
             logits = self.transformer.lm_head(x[:, -1, :])
             loss = None
