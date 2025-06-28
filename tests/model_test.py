@@ -27,7 +27,9 @@ def main():
     model.eval()
 
     with torch.no_grad():
-        print(model.generate(tokeniser, 'When I go to the shops, I usually buy', temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
+        prompt = input("Query: ")
+        if prompt != '':
+            print(model.generate(tokeniser, prompt, temperature=config.temperature, k=config.k, max_new_tokens=100, device=device))
    
 if __name__ == '__main__':
     main()
