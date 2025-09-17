@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.model.attention import MultiHeadAttention, LoRALinear
+from microgpt.model.attention import MultiHeadAttention
 from microgpt.config import Config
 
 class GPTModel(nn.Module):
@@ -21,28 +21,28 @@ class GPTModel(nn.Module):
         ))
 
         if use_lora:
-            # Freeze all parameters except LoRA layers
-            for param in self.parameters():
-                param.requires_grad = False
-
-            for module in self.modules():
-                if isinstance(module, LoRALinear):
-                    module.A.requires_grad = True
-                    module.B.requires_grad = True
+            self.lora_disable_gradients()
         else:
-            # Weight tying
-            self.transformer.wte.weight = self.transformer.lm_head.weight
-
-            # Initialise the model weights
-            self.apply(self._init_weights)
+            self.transformer.wte.weight = self.transformer.lm_head.weight # Weight tying        
+            self.apply(self._init_weights) # Initialise the model weights
 
     def _init_weights(self, module):
+
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
+
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)       
+
+    def lora_disable_gradients(self):
+        
+        for param in self.parameters():
+            param.requires_grad = False
+
+        for name, param in self.transformer.named_parameters():
+            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
 
     def calculate_loss(self, xb, yb, loss_mask=None):
         B, T, C = xb.shape
