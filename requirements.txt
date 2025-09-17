@@ -1,4 +1,4 @@
 datasets==3.3.2
 setuptools==75.8.2
-torch==2.6.0
+torch==2.6.0+cu126 --index-url https://download.pytorch.org/whl/cu126
 transformers==4.49.0
