@@ -11,7 +11,7 @@ class Config:
     dropout: float = 0.1
     projection: int = 4
 
-    vocab_size: int = 50257
+    vocab_size: int = 50261
     pad_token_id: int = 0
 
     lora_rank: int = 16

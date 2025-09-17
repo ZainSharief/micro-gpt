@@ -2,81 +2,54 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
-class OpenAssistantDataset(Dataset):
-    def __init__(self, tokeniser, context_size, device, split='train', pad_token_id=0):
-        self.context_size = context_size
-        self.device = device
+class HH_RLHF_Chosen(Dataset):
 
-        data = load_dataset(
-            'OpenAssistant/oasst1', 
+    def __init__(self, tokenizer, context_size=384, split='train', device='cpu'):
+
+        self.data = load_dataset(
+            'Anthropic/hh-rlhf', 
             split=split, 
             trust_remote_code=True
-        )
+        )['chosen']
 
-        self.dataset = self.build_conversations(data, context_size, tokeniser, pad_token_id)
+        self.context_size = context_size
+        self.tokenizer = tokenizer
+        self.device = device
     
-    def build_conversations(self, dataset, context_size, tokeniser, pad_token_id):
-
-        conversation_dataset = []
-
-        # Extracts all the "parents" and stores children messages with their parent IDs
-        parents = []
-        parent_ids = {}
-        for data in dataset:
-            if data['parent_id'] is None:  
-                parents.append(data)
-            else:
-                parent_ids[data['parent_id']] = data
-
-        for parent in parents:
-
-            # Adds the tokenised parent message to the conversation
-            conversation = tokeniser.encode(parent['text']).squeeze(0)
-            conversation = torch.cat((conversation, torch.tensor([tokeniser.eos_token], dtype=torch.long)))
-            loss_value = 0 if parent['role'] == 'prompter' else 1
-            loss_mask = torch.full((conversation.size(0) + 1,), fill_value=loss_value, dtype=torch.bool) 
-            
-            while parent['message_id'] in parent_ids:
-                
-                # Adds the tokenised child message to the conversation
-                # and updates the parent to the next message in the chain
-                parent = parent_ids[parent['message_id']]
-                tokenised_text = tokeniser.encode(parent['text']).squeeze(0)
-                conversation = torch.cat((conversation, tokenised_text))
-                conversation = torch.cat((conversation, torch.tensor([tokeniser.eos_token], dtype=torch.long)))
-                loss_value = 0 if parent['role'] == 'prompter' else 1
-                loss_mask = torch.cat((loss_mask, torch.full((tokenised_text.size(0) + 1,), fill_value=loss_value, dtype=torch.bool)))
-
-            # Splits the conversation into samples of size context_size + 1
-            conversation_samples, loss_mask_mask_samples = self.batch_data(conversation, loss_mask, context_size, pad_token_id)    
-
-            conversation_dataset += [{'tokens' : conv, 'loss_mask' : mask} for conv, mask in zip(conversation_samples, loss_mask_mask_samples)]
-        
-        return conversation_dataset
-
-    def batch_data(self, conversation, loss_mask, context_size, pad_token_id):
-
-        conversation_samples = list(conversation.split(context_size + 1, dim=0))
-        loss_mask_samples = list(loss_mask.split(context_size + 1, dim=0))
-
-        size = conversation_samples[-1].size(0)
-        if size < context_size + 1:
-            conversation_samples[-1] = torch.cat((conversation_samples[-1], torch.full((context_size + 1 - size,), pad_token_id, dtype=torch.long)))
-            loss_mask_samples[-1] = torch.cat((loss_mask_samples[-1], torch.zeros(context_size + 1 - size, dtype=torch.bool)))
-
-        return conversation_samples, loss_mask_samples
-
     def __len__(self):
-        return len(self.dataset)
+        return len(self.data)
     
+    def build_loss_mask(self, y, assistant_id, end_assistant_id):
+       
+        loss_mask = torch.zeros_like(y)
+
+        # find all positions
+        starts = (y == assistant_id).nonzero(as_tuple=True)[0]
+        ends = (y == end_assistant_id).nonzero(as_tuple=True)[0]
+
+        # pair them safely
+        for s in starts:
+            after = ends[ends > s]
+            if len(after) > 0:
+                e = after[0].item()
+                loss_mask[s+1:e+1] = 1
+
+        return loss_mask
+
     def __getitem__(self, idx):
 
-        sample = self.dataset[idx]
-        tokens = sample['tokens']
-        pad_mask = sample['loss_mask']
+        data = self.data[idx].strip().replace('\n', '')
+        data = data.replace('Human: ', self.tokenizer.end_assistant_token + self.tokenizer.user_token)
+        data = data.replace('Assistant: ', self.tokenizer.end_user_token + self.tokenizer.assistant_token)
 
-        x = tokens[:self.context_size]
-        y = tokens[1:]
-        pad_mask = pad_mask[:self.context_size]
+        # removes the unneccessary end_assistant_token at the start
+        data = data[len(self.tokenizer.end_assistant_token):]
+        data += self.tokenizer.end_assistant_token
 
-        return x.to(self.device), y.to(self.device), pad_mask.to(self.device)
+        data = self.tokenizer.encode_padding(data)
+        x = data[:-1]
+        y = data[1:]
+
+        loss_mask = self.build_loss_mask(y, self.tokenizer.assistant_token_id, self.tokenizer.end_assistant_token_id)
+
+        return x.to(self.device, non_blocking=True), y.to(self.device, non_blocking=True), loss_mask.to(self.device, non_blocking=True)
