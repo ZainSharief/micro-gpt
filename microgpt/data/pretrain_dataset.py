@@ -1,32 +1,46 @@
 import torch
 from datasets import load_dataset
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset
+import numpy as np
+import os
 
-class FineWeb(IterableDataset):
-    def __init__(self, tokenizer, context_size, device='cpu'):
+from microgpt.tokenizer import GPTtokenizer
+
+class FineWeb(Dataset):
+    def __init__(self, tokenizer : GPTtokenizer, context_size : int, save_path : str = "fineweb_tokens.bin", device : str = 'cpu'):
         self.tokenizer = tokenizer
         self.context_size = context_size
+        self.save_path = save_path
         self.device = device
-       
-        self.dataset = load_dataset(
+
+        if not os.path.exists(save_path):
+            self.preprocess_and_save()
+
+        self.data = np.memmap(save_path, dtype=np.int64, mode="r")
+
+    def __len__(self):
+        return len(self.data) // (self.context_size + 1)
+    
+    def __getitem__(self, idx):
+
+        i = idx * (self.context_size + 1)
+        xy = self.data[i:i + (self.context_size + 1)]
+
+        x = torch.tensor(xy[:-1], dtype=torch.long)
+        y = torch.tensor(xy[1:], dtype=torch.long)
+
+        return x, y
+     
+    def preprocess_and_save(self):
+
+        dataset = load_dataset(
             "HuggingFaceFW/fineweb-edu", 
             name='sample-10BT', 
             trust_remote_code=True, 
-            split='train',
-            streaming=True
-        ).shuffle(buffer_size=10_000, seed=411)
+            split='train'
+        )
 
-    def __iter__(self):
-
-        for data in self.dataset:
-            input_ids = self.tokenizer.encode(data['text']).squeeze(0)
-
-            chunks = torch.split(input_ids, self.context_size + 1)
-            
-            for chunk in chunks:
-                if chunk.size(0) < self.context_size + 1:
-                    pad_size = self.context_size + 1 - chunk.size(0)
-                    pad = torch.full((pad_size,), self.tokenizer.pad_token_id, dtype=torch.long)
-                    chunk = torch.cat([chunk, pad])
-                
-                yield chunk[:-1].to(self.device), chunk[1:].to(self.device)
+        with open(self.save_path, "wb") as fout:
+            batch_texts = [doc['text'] + self.tokenizer.eos_token for doc in dataset]
+            all_tokens = self.tokenizer.tokenizer(batch_texts, return_tensors='np', padding=False, truncation=False)['input_ids']
+            np.concatenate(all_tokens).tofile(fout)
