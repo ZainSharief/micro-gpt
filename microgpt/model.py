@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.model.attention import MultiHeadAttention
+from microgpt.modules.attention import MultiHeadAttention
 from microgpt.config import Config
 
 class GPTModel(nn.Module):

@@ -21,11 +21,8 @@ class DummyDataset(torch.utils.data.Dataset):
         self.context_size = context_size
         self.device = device
 
-        text = self.tokenizer.user_token + 'What is the captial of France?' + self.tokenizer.end_user_token \
-        + self.tokenizer.assistant_token + 'The capital of France is Paris.' + self.tokenizer.end_assistant_token
-
+        text = 'The capital of France is Paris.'
         self.data = self.tokenizer.encode(text).to(device).squeeze(0)
-        self.loss_mask = self.build_loss_mask(self.data[1:], self.tokenizer.assistant_token, self.tokenizer.end_assistant_token)
 
         if self.data.size(-1) > self.context_size:
             self.data = self.data[:self.context_size]
@@ -34,26 +31,11 @@ class DummyDataset(torch.utils.data.Dataset):
             pad_size = self.context_size - self.data.size(-1)
             self.data = torch.concat([self.data, torch.zeros(pad_size + 1, dtype=torch.long, device=device)], dim=-1)
     
-    def build_loss_mask(self, y, assistant_id, end_assistant_id):
-       
-        loss_mask = torch.zeros_like(y)
-
-        starts = (y == assistant_id).nonzero(as_tuple=True)[0]
-        ends = (y == end_assistant_id).nonzero(as_tuple=True)[0]
-
-        for s in starts:
-            after = ends[ends > s]
-            if len(after) > 0:
-                e = after[0].item()
-                loss_mask[s+1:e+1] = 1
-
-        return loss_mask
-
     def __len__(self):
         return 1_000_000
 
     def __getitem__(self, _):  
-        return self.data[:-1], self.data[1:], self.loss_mask
+        return self.data[:-1], self.data[1:]
     
     def get_first_token(self):
         return self.tokenizer.decode(self.data[0])
@@ -72,7 +54,7 @@ def main():
     dataset = DummyDataset(tokenizer=tokenizer, context_size=config.context_size, device=device) 
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
-    model = GPTModel(config, use_lora=True)
+    model = GPTModel(config, use_lora=False)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
@@ -84,13 +66,13 @@ def main():
     scaler = torch.amp.GradScaler(device)
     model = model.to(device)
     
-    for current_batch, (xb, yb, loss_mask) in enumerate(dataloader):
+    for current_batch, (xb, yb) in enumerate(dataloader):
 
         start_time = time.time()
         optimizer.zero_grad(set_to_none=True)
 
         with torch.autocast(device_type=device, dtype=torch.float16):
-            _, loss = model(xb, yb, loss_mask)
+            _, loss = model(xb, yb)
         scaler.scale(loss).backward()
 
         scaler.unscale_(optimizer)

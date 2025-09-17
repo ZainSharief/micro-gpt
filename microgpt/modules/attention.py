@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from microgpt.config import Config
-from microgpt.model.rope import RotaryPositionalEmbeddings
-from microgpt.model.lora import LoRALinear
+from microgpt.modules.rope import RotaryPositionalEmbeddings
+from microgpt.modules.lora import LoRALinear
 
 class MultiHeadAttention(nn.Module):
 
