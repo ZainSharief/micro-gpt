@@ -4,7 +4,7 @@ import time
 
 from microgpt.tokenizer import GPTtokenizer
 from microgpt.config import Config
-from microgpt.data.pretrain_dataset import FineWeb
+from microgpt.data.dataset import FineWeb
 from microgpt.model.model import GPTModel
 
 def main():

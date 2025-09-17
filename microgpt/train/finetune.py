@@ -5,7 +5,7 @@ import time
 from microgpt.tokenizer import GPTtokenizer
 from microgpt.config import Config
 from microgpt.model.model import GPTModel
-from microgpt.data.finetune_dataset import HH_RLHF_Chosen
+from microgpt.data.dataset import HH_RLHF_Chosen
 
 def main():
 
