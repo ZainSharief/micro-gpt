@@ -34,7 +34,7 @@ class GPTModel(nn.Module):
                 torch.nn.init.zeros_(module.bias)
 
         elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)       
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def lora_disable_gradients(self):
         
@@ -48,7 +48,7 @@ class GPTModel(nn.Module):
         B, T, C = xb.shape
         xb = xb.view(B*T, C)
         yb = yb.view(B*T)
-        loss = F.cross_entropy(xb, yb, ignore_index=self.config.pad_token_id, reduction='none')
+        loss = F.cross_entropy(xb, yb, reduction='none')
 
         if loss_mask is None:
             return loss.mean()
@@ -82,10 +82,10 @@ class GPTModel(nn.Module):
         return logits, loss
     
     @torch.no_grad()
-    def generate(self, tokeniser, text, temperature, k, max_new_tokens, device):
+    def generate(self, tokenizer, text, temperature, k, max_new_tokens, device):
 
         # Encodes the text and adjusts size to context_size
-        context = tokeniser.encode(text)[:, -self.config.context_size+1:].to(device)
+        context = tokenizer.encode(text)[:, -self.config.context_size+1:].to(device)
         output = []
 
         for _ in range(max_new_tokens):
@@ -102,11 +102,14 @@ class GPTModel(nn.Module):
             probs, idxs = torch.topk(probs, k)
 
             idx = idxs[0, torch.multinomial(probs, 1)]
-            
+
+            if idx == 50260:
+                return tokenizer.decode(output)
+
             context = torch.cat((context, idx), dim=1)
             output.append(idx[0, 0].int())
             
-        return tokeniser.decode(output)
+        return tokenizer.decode(output)
 
 class Block(nn.Module):
 
