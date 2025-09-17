@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class Config:
     
     embedding_dim: int = 768
-    context_size: int = 256
+    context_size: int = 384
     num_heads: int = 16
     num_layers: int = 12
     max_norm: float = 1.0
