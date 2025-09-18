@@ -9,5 +9,4 @@ python -u microgpt/train.py \
     --weight_decay 0.0 \
     --lr 3e-6 \
     --max_lr 5e-5 \
-    --finetune_path weights/fine_tuned_model.pth
-
+    --final_path weights/fine_tuned_model.pth

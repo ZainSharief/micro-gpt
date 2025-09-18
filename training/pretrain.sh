@@ -9,4 +9,4 @@ python -u microgpt/train.py \
     --lr 3e-5 \
     --max_lr 5e-4 \
     --save_iter 5000 \
-    --pretrain_path weights/base_model.pth
+    --final_path weights/base_model.pth

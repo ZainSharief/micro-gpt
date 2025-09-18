@@ -10,7 +10,7 @@ def main():
 
     config = Config()
     tokenizer = GPTtokenizer()
-    model = GPTModel(config, use_lora=True).to(device)
+    model = GPTModel(config, mode='finetune').to(device)
     checkpoint = torch.load('weights/fine_tuned_checkpoint_8.pth', weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'], strict=True) 
     model.eval()
