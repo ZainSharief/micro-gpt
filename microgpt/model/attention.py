@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 
 from microgpt.config import Config
-from microgpt.modules.rope import RotaryPositionalEmbeddings
+from microgpt.model.rope import RotaryPositionalEmbeddings
 
 class MultiHeadAttention(nn.Module):
 

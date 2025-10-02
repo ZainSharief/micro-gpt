@@ -4,7 +4,7 @@ import time
 
 from microgpt.tokenizer import GPTtokenizer
 from microgpt.config import Config
-from microgpt.model import GPTModel
+from microgpt.model.model import FinetuneModel
 
 '''
 Testing the architecture of the base model.
@@ -72,7 +72,7 @@ def main():
     dataset = DummyDataset(tokenizer=tokenizer, context_size=config.context_size, device=device) 
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
-    model = GPTModel(config, use_lora=True)
+    model = FinetuneModel(config, use_lora=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 

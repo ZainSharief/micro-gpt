@@ -13,7 +13,7 @@ from microgpt.datasets.fineweb import FineWeb
 from microgpt.datasets.hh_rlhf_chosen import HH_RLHF_Chosen
 from microgpt.datasets.hh_rlhf import HH_RLHF
 
-from microgpt.model import PretrainModel, FinetuneModel, RewardModel
+from microgpt.model.model import PretrainModel, FinetuneModel, RewardModel
 
 def set_seed(seed=411):
     random.seed(seed)

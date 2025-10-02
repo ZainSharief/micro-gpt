@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.modules.block import Block
+from microgpt.model.block import Block
 from microgpt.config import Config
 
 class GPTModel(nn.Module):
