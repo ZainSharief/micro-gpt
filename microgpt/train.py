@@ -8,7 +8,11 @@ import os
 
 from microgpt.tokenizer import GPTtokenizer
 from microgpt.config import Config
-from microgpt.data.dataset import FineWeb, HH_RLHF_Chosen, HH_RLHF
+
+from microgpt.datasets.fineweb import FineWeb
+from microgpt.datasets.hh_rlhf_chosen import HH_RLHF_Chosen
+from microgpt.datasets.hh_rlhf import HH_RLHF
+
 from microgpt.model import PretrainModel, FinetuneModel, RewardModel
 
 def set_seed(seed=411):
