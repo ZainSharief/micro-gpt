@@ -177,3 +177,42 @@ class FinetuneModel(GPTModel):
             output.append(idx.item())
             
         return tokenizer.decode(output)
+    
+class RewardModel(GPTModel):
+
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+        self.transformer.lm_head = nn.Linear(self.config.embedding_dim, 1, bias=True)
+
+        for name, param in self.transformer.named_parameters():
+            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
+
+        self.apply(self._init_weights)
+
+    def calculate_loss(self, sA, sB):
+        return -F.logsigmoid(sA - sB).mean()
+    
+    def masked_mean_pool(self, token_ids, embeddings):
+        mask = (token_ids != self.config.pad_token_id).unsqueeze(-1).to(embeddings.dtype)
+        summed = (embeddings * mask).sum(dim=1)
+        counts = mask.sum(dim=1).clamp(min=1e-6)
+        return summed / counts
+    
+    def forward(self, accepted, rejected=None, *args):
+
+        accepted_emb = super().forward(accepted)
+        accepted_emb = self.masked_mean_pool(accepted, accepted_emb)
+        accepted_emb = self.transformer.lm_head(accepted_emb)
+
+        if rejected is None:
+            return accepted_emb, None
+
+        rejected_emb = super().forward(rejected)
+        rejected_emb = self.masked_mean_pool(rejected, rejected_emb)
+        rejected_emb = self.transformer.lm_head(rejected_emb)
+
+        return (accepted_emb, rejected_emb), self.calculate_loss(accepted_emb, rejected_emb)

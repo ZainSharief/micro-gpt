@@ -8,7 +8,7 @@ import os
 
 from microgpt.tokenizer import GPTtokenizer
 from microgpt.config import Config
-from microgpt.data.dataset import FineWeb, HH_RLHF_Chosen
+from microgpt.data.dataset import FineWeb, HH_RLHF_Chosen, HH_RLHF
 from microgpt.model import PretrainModel, FinetuneModel, RewardModel
 
 def set_seed(seed=411):
@@ -55,10 +55,19 @@ def train(args):
         val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='validation', device=device)
         model = FinetuneModel(config).to(device)
 
+    elif args.mode == 'reward':
+        dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size,save_path='hh_rlhf_tokens.bin', split='train', device=device)
+        val_dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size, save_path='hh_rlhf_tokens_test.bin', split='test', device=device)
+        model = RewardModel(config).to(device)
+
     total_steps = len(dataset) // args.batch_size
     
     if args.mode != 'pretrain' and args.model_load_path: # only pretrain will start without a checkpoint
         checkpoint = torch.load(args.model_load_path, weights_only=True)
+
+        if args.mode == 'reward':
+            del checkpoint["model_state_dict"]["transformer.lm_head.weight"]
+
         model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)

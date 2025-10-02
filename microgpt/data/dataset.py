@@ -99,3 +99,77 @@ class HH_RLHF_Chosen(Dataset):
         loss_mask = self.build_loss_mask(y, self.tokenizer.assistant_token_id, self.tokenizer.end_assistant_token_id)
 
         return x.to(self.device, non_blocking=True), y.to(self.device, non_blocking=True), loss_mask.to(self.device, non_blocking=True)
+    
+class HH_RLHF(Dataset):
+
+    def __init__(self, tokenizer: GPTtokenizer, context_size: int = 384, save_path: str = "hh_rlhf_tokens.bin", split: str = 'train', device: str = 'cpu'):
+        self.context_size = context_size
+        self.tokenizer = tokenizer
+        self.device = device
+
+        if not os.path.exists(save_path):
+            self.preprocess_and_save(split, save_path)
+
+        self.data = torch.load(save_path)
+        self.dummy_mask = torch.tensor(0)
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        return *self.data[idx], self.dummy_mask
+    
+    def split_conversation(self, conversation):
+
+        pattern = r"(Human|Assistant):\s*"
+        matches = list(re.finditer(pattern, conversation))
+
+        last_role = None
+        merged_texts = []
+
+        for i in range(len(matches)):
+            
+            role = matches[i].group(1)
+            start = matches[i].end()
+            end = matches[i+1].start() if i+1 < len(matches) else len(conversation)
+            text = conversation[start:end].strip()
+            
+            if last_role == role:
+                merged_texts[-1] += "\n\n" + text
+            else:
+                merged_texts.append(text)
+                last_role = role
+        
+        merged_texts = [t for t in merged_texts if t]
+
+        return merged_texts
+
+    def preprocess_and_save(self, split, save_path):
+
+        dataset = load_dataset(
+            'Anthropic/hh-rlhf', 
+            split=split, 
+            trust_remote_code=True
+        )
+
+        samples = []
+        total = 0
+        for item in dataset:
+
+            chosen = self.split_conversation(item['chosen'])
+            rejected = self.split_conversation(item['rejected'])
+
+            if (len(chosen) != len(rejected)) or len(chosen) % 2:
+                continue
+
+            for i in range(0, len(chosen), 2):
+
+                if chosen[i+1] == rejected[i+1]:
+                    continue
+
+                chosen_sample = self.tokenizer.encode_padding(f'{self.tokenizer.user_token}{chosen[i]}{self.tokenizer.end_user_token}{self.tokenizer.assistant_token}{chosen[i+1]}{self.tokenizer.end_assistant_token}', max_length=self.context_size)
+                rejected_sample = self.tokenizer.encode_padding(f'{self.tokenizer.user_token}{chosen[i]}{self.tokenizer.end_user_token}{self.tokenizer.assistant_token}{rejected[i+1]}{self.tokenizer.end_assistant_token}', max_length=self.context_size)
+                samples.append((chosen_sample, rejected_sample))
+                total += 1
+        
+        torch.save(samples, save_path)
