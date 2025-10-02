@@ -9,9 +9,9 @@ import os
 from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.config import Config
 
-from microgpt.datasets.fineweb import FineWeb
-from microgpt.datasets.hh_rlhf_chosen import HH_RLHF_Chosen
-from microgpt.datasets.hh_rlhf import HH_RLHF
+from microgpt.data.fineweb import FineWeb
+from microgpt.data.hh_rlhf_chosen import HH_RLHF_Chosen
+from microgpt.data.hh_rlhf import HH_RLHF
 
 from microgpt.model.model import PretrainModel, FinetuneModel, RewardModel
 
