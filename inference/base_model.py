@@ -1,7 +1,7 @@
 import torch 
 
 from microgpt.tokenizer import GPTtokenizer
-from microgpt.model import GPTModel
+from microgpt.model import PretrainModel
 from microgpt.config import Config
 
 def main():
@@ -10,7 +10,7 @@ def main():
 
     config = Config()
     tokenizer = GPTtokenizer()
-    model = GPTModel(config, use_lora=False).to(device)
+    model = PretrainModel(config).to(device)
     checkpoint = torch.load('weights/base_model_checkpoint_190000.pth', map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'], strict=True)
     model.eval()

@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.modules.attention import MultiHeadAttention
+from microgpt.modules.block import Block
 from microgpt.config import Config
 
 class GPTModel(nn.Module):
         
-    def __init__(self, config: Config, use_lora: bool = False) -> None:
+    def __init__(self, config: Config, use_lora: bool = True) -> None:
         
         super().__init__()
         self.config = config
@@ -20,12 +20,6 @@ class GPTModel(nn.Module):
             lm_head = nn.Linear(config.embedding_dim, config.vocab_size, bias=False)
         ))
 
-        if use_lora:
-            self.lora_disable_gradients()
-        else:
-            self.transformer.wte.weight = self.transformer.lm_head.weight # Weight tying        
-            self.apply(self._init_weights) # Initialise the model weights
-
     def _init_weights(self, module):
 
         if isinstance(module, nn.Linear):
@@ -36,28 +30,10 @@ class GPTModel(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def lora_disable_gradients(self):
-        
-        for param in self.parameters():
-            param.requires_grad = False
-
-        for name, param in self.transformer.named_parameters():
-            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
-
     def calculate_loss(self, xb, yb, loss_mask=None):
-        B, T, C = xb.shape
-        xb = xb.view(B*T, C)
-        yb = yb.view(B*T)
-        loss = F.cross_entropy(xb, yb, reduction='none')
+        raise NotImplementedError()
 
-        if loss_mask is None:
-            return loss.mean()
-
-        loss_mask = loss_mask.view(B*T)
-        loss = loss * loss_mask 
-        return loss.sum() / loss_mask.sum().clamp(min=1)
-
-    def forward(self, x, targets=None, loss_mask=None):
+    def forward(self, x):
 
         pad_mask = (x != self.config.pad_token_id).unsqueeze(1).unsqueeze(2)
 
@@ -67,14 +43,41 @@ class GPTModel(nn.Module):
 
         # passing through attention & mlp blocks
         for layer in self.transformer.decoder:
-            x = layer(x, pad_mask)
+            x = layer(x)
 
         # normalisation and out prediction
         x = self.transformer.norm(x)
-        
+
+        return x
+    
+    @torch.no_grad()
+    def generate(self, tokenizer, text, max_new_tokens, device):
+        raise NotImplementedError()
+    
+class PretrainModel(GPTModel):
+
+    def __init__(self, config: Config) -> None:
+        super().__init__(config, use_lora=False)
+
+        self.transformer.lm_head.weight = self.transformer.wte.weight # Weight tying     
+        self.apply(self._init_weights) 
+        assert self.transformer.lm_head.weight.data_ptr() == self.transformer.wte.weight.data_ptr()
+           
+    def calculate_loss(self, xb, yb, *args):
+        B, T, C = xb.shape
+        xb = xb.view(B*T, C)
+        yb = yb.view(B*T)
+        loss = F.cross_entropy(xb, yb, reduction='none')
+        return loss.mean()
+
+
+    def forward(self, x, targets=None, loss_mask=None):
+
+        x = super().forward(x)
+
         if targets is not None:
             logits = self.transformer.lm_head(x)
-            loss = self.calculate_loss(logits, targets, loss_mask=loss_mask)
+            loss = self.calculate_loss(logits, targets)
         else:
             logits = self.transformer.lm_head(x[:, -1, :])
             loss = None
@@ -82,7 +85,7 @@ class GPTModel(nn.Module):
         return logits, loss
     
     @torch.no_grad()
-    def generate(self, tokenizer, text, temperature, k, max_new_tokens, device):
+    def generate(self, tokenizer, text, max_new_tokens, device):
 
         # Encodes the text and adjusts size to context_size
         context = tokenizer.encode(text)[:, -self.config.context_size+1:].to(device)
@@ -95,48 +98,82 @@ class GPTModel(nn.Module):
             logits, _ = self.forward(context)
 
             # Uses temperature to scale the logits for softmax
-            logits = logits / temperature
-            probs = F.softmax(logits, dim=-1)
-
+            logits = logits / self.config.temperature
+            
             # Uses top-k sampling to get the next token
-            probs, idxs = torch.topk(probs, k)
+            probs, idxs = torch.topk(logits, self.config.k)
 
-            idx = idxs[0, torch.multinomial(probs, 1)]
+            probs = F.softmax(probs, dim=-1)
+            idx = idxs[:, torch.multinomial(probs, num_samples=1)]
 
-            if idx == 50260:
+            if idx.item() == tokenizer.eos_token_id:
                 return tokenizer.decode(output)
 
-            context = torch.cat((context, idx), dim=1)
-            output.append(idx[0, 0].int())
+            context = torch.cat([context, idx], dim=1)
+            output.append(idx.item())
             
         return tokenizer.decode(output)
+    
+class FinetuneModel(GPTModel):
 
-class Block(nn.Module):
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
 
-    def __init__(self, config: Config, use_lora: bool = False) -> None:
-        super().__init__()
-        self.rmsnorm_1 = nn.RMSNorm(config.embedding_dim)
-        self.multiheadattention = MultiHeadAttention(config, use_lora)
-        self.dropout_1 = nn.Dropout(config.dropout)
+        for param in self.parameters():
+            param.requires_grad = False
 
-        self.rmsnorm_2 = nn.RMSNorm(config.embedding_dim)
-        self.mlp = MLP(config.embedding_dim, config.projection)
-        self.dropout_2 = nn.Dropout(config.dropout)
+        for name, param in self.transformer.named_parameters():
+            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
 
-    def forward(self, x, pad_mask=None):
-        x = x + self.dropout_1(self.multiheadattention(self.rmsnorm_1(x), pad_mask))
-        x = x + self.dropout_2(self.mlp(self.rmsnorm_2(x)))
-        return x    
+    def calculate_loss(self, xb, yb, loss_mask=None):
+        B, T, C = xb.shape
+        xb = xb.view(B*T, C)
+        yb = yb.view(B*T)
+        loss = F.cross_entropy(xb, yb, reduction='none')
 
-class MLP(nn.Module):
+        loss_mask = loss_mask.view(B*T)
+        loss = loss * loss_mask 
+        return loss.sum() / loss_mask.sum().clamp(min=1)
 
-    def __init__(self, embedding_dim, projection=4):
-        super().__init__()
-        self.feedforward = nn.Sequential(
-            nn.Linear(embedding_dim, projection * embedding_dim),
-            nn.GELU(),
-            nn.Linear(projection * embedding_dim, embedding_dim),
-        )
+    def forward(self, x, targets=None, loss_mask=None):
 
-    def forward(self, x):
-        return self.feedforward(x)
+        x = super().forward(x)
+
+        if targets is not None:
+            logits = self.transformer.lm_head(x)
+            loss = self.calculate_loss(logits, targets, loss_mask=loss_mask)
+        else:
+            logits = self.transformer.lm_head(x[:, -1, :])
+            loss = None
+
+        return logits, loss
+    
+    @torch.no_grad()
+    def generate(self, tokenizer, text, max_new_tokens, device):
+
+        # Encodes the text and adjusts size to context_size
+        context = tokenizer.encode(text)[:, -self.config.context_size+1:].to(device)
+        output = []
+
+        for _ in range(max_new_tokens):
+
+            # Passes through model and takes the last token
+            context = context[:, -self.config.context_size:]
+            logits, _ = self.forward(context)
+
+            # Uses temperature to scale the logits for softmax
+            logits = logits / self.config.temperature
+            
+            # Uses top-k sampling to get the next token
+            probs, idxs = torch.topk(logits, self.config.k)
+
+            probs = F.softmax(probs, dim=-1)
+            idx = idxs[:, torch.multinomial(probs, num_samples=1)].squeeze(0)
+
+            if idx.item() == tokenizer.end_assistant_token_id:
+                return tokenizer.decode(output)
+
+            context = torch.cat([context, idx], dim=1)
+            output.append(idx.item())
+            
+        return tokenizer.decode(output)
