@@ -15,7 +15,7 @@ def main():
     model.load_state_dict(checkpoint['model_state_dict'], strict=True) 
     model.eval()
 
-    conversation = ''
+    conversation = tokenizer.user_token + "You are a helpful assisstant. Please answer my questions as best as you can." + tokenizer.end_user_token + tokenizer.assistant_token + tokenizer.end_assistant_token
     with torch.no_grad():
         while True:
 
