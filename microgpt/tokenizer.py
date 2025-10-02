@@ -1,10 +1,11 @@
 from transformers import GPT2Tokenizer
+from microgpt.config import Config
 
 class GPTtokenizer():
 
-    def __init__(self, max_length: int = 385):
+    def __init__(self):
         self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2", clean_up_tokenization_spaces=True, verbose=False, use_fast=True)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.pad_token = self.tokenizer.decode(Config().pad_token_id)
         self.tokenizer.truncation_side = "left"
     
         new_tokens = {
@@ -15,7 +16,6 @@ class GPTtokenizer():
         }
         self.add_tokens(new_tokens)
         
-        self.max_length = max_length
         self.vocab_size = self.tokenizer.vocab_size
 
         self.eos_token = self.tokenizer.eos_token
@@ -32,8 +32,8 @@ class GPTtokenizer():
     def encode(self, data):
         return self.tokenizer(data, return_tensors="pt", add_special_tokens=False)["input_ids"]
     
-    def encode_padding(self, data):
-        return self.tokenizer(data, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt")["input_ids"].squeeze(0)
+    def encode_padding(self, data, max_length: int = 384):
+        return self.tokenizer(data, max_length=max_length, truncation=True, padding="max_length", return_tensors="pt")["input_ids"].squeeze(0)
  
     def decode(self, tokens):
         return self.tokenizer.decode(tokens, errors="replace")

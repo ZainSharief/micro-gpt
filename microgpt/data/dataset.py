@@ -1,8 +1,12 @@
 import torch
+import torch.nn.functional as F
 from datasets import load_dataset
 from torch.utils.data import Dataset
 import numpy as np
 import os
+import re
+
+from microgpt.tokenizer import GPTtokenizer
 
 class FineWeb(Dataset):
     def __init__(self, tokenizer, context_size, save_path="fineweb_tokens.bin", device='cpu'):
@@ -88,7 +92,7 @@ class HH_RLHF_Chosen(Dataset):
         data = data[len(self.tokenizer.end_assistant_token):]
         data += self.tokenizer.end_assistant_token
 
-        data = self.tokenizer.encode_padding(data)
+        data = self.tokenizer.encode_padding(data, max_length=self.context_size+1)
         x = data[:-1]
         y = data[1:]
 
