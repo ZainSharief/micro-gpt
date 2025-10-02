@@ -1,6 +1,6 @@
 import torch 
 
-from microgpt.tokenizer import GPTtokenizer
+from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.model.model import PretrainModel
 from microgpt.config import Config
 

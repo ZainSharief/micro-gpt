@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import os
 import re
 
-from microgpt.tokenizer import GPTtokenizer
+from microgpt.tokenizer.tokenizer import GPTtokenizer
 
 class HH_RLHF(Dataset):
 

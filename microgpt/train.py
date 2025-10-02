@@ -6,7 +6,7 @@ import time
 import argparse
 import os
 
-from microgpt.tokenizer import GPTtokenizer
+from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.config import Config
 
 from microgpt.datasets.fineweb import FineWeb

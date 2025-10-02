@@ -2,7 +2,7 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
-from microgpt.tokenizer import GPTtokenizer
+from microgpt.tokenizer.tokenizer import GPTtokenizer
 
 class HH_RLHF_Chosen(Dataset):
 

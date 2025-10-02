@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import time
 
-from microgpt.tokenizer import GPTtokenizer
+from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.config import Config
 from microgpt.model.model import PretrainModel
 
