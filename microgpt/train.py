@@ -134,18 +134,18 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune'])
-    parser.add_argument('--checkpoint_path', type=str, default=None)
+    parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune', 'reward'])
+    parser.add_argument('--model_load_path', type=str, default=None)
     parser.add_argument('--seed', type=int, default=411)
-    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--batch_acc_size', type=int, default=32)
     parser.add_argument('--weight_decay', type=float, default=0.01)
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--max_lr', type=float, default=5e-4)
     parser.add_argument('--save_iter', type=int, default=5000)
-    parser.add_argument('--pretrain_path', type=str, default='weights/base_model.pth')
-    parser.add_argument('--finetune_path', type=str, default='weights/fine_tuned_model.pth')
+    parser.add_argument('--checkpoint_path', type=str, default='weights/model.pth')
+    parser.add_argument('--final_path', type=str, default='weights/model.pth')
     args = parser.parse_args()
 
     train(args)

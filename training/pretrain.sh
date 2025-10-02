@@ -6,7 +6,8 @@ python -u microgpt/train.py \
     --batch_size 128 \
     --batch_acc_size 32 \
     --weight_decay 0.01 \
-    --lr 3e-5 \
-    --max_lr 5e-4 \
+    --lr 5e-5 \
+    --max_lr 3e-4 \
     --save_iter 5000 \
-    --pretrain_path weights/base_model.pth
+    --checkpoint_path weights/pretrain_checkpoint.pth \
+    --final_path weights/base_model.pth
