@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from microgpt.config import Config
 from microgpt.modules.rope import RotaryPositionalEmbeddings
-from microgpt.modules.lora import LoRALinear
 
 class MultiHeadAttention(nn.Module):
 
@@ -54,3 +54,19 @@ class MultiHeadAttention(nn.Module):
         x = x.transpose(1, 2).contiguous().view(B, T, C)
         x = self.proj(x)
         return x
+    
+class LoRALinear(nn.Module):
+    def __init__(self, base_linear: nn.Linear, rank, alpha, dropout=0.1):
+        super().__init__()
+
+        self.base = base_linear
+        self.A = nn.Parameter(torch.randn(base_linear.in_features, rank))
+        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
+        self.B = nn.Parameter(torch.zeros(rank, base_linear.out_features))
+        self.alpha = alpha
+        self.dropout = nn.Dropout(dropout)
+        self.scaling = self.alpha / self.A.size(1)
+
+    def forward(self, x):
+        lora_out = self.dropout(x @ self.A @ self.B) * self.scaling
+        return self.base(x) + lora_out

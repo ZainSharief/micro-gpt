@@ -23,7 +23,7 @@ class RotaryPositionalEmbeddings(nn.Module):
        
         seq_len = x.size(1)
         rope_cache = (self.cache[:seq_len] if input_pos is None else self.cache[input_pos])
-        xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        xshaped = x.reshape(*x.shape[:-1], -1, 2)
 
         rope_cache = rope_cache.view(-1, xshaped.size(1), 1, xshaped.size(3), 2)
 
