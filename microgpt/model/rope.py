@@ -3,7 +3,22 @@ import torch.nn as nn
 
 class RotaryPositionalEmbeddings(nn.Module):
 
-    def __init__(self, dim: int, max_seq_len: int = 4096, base: int = 10_000) -> None:
+    """
+    This implemenation is an adaptation of the implementation at:
+    https://medium.com/@parulsharmmaa/understanding-rotary-positional-embedding-and-implementation-9f4ad8b03e32
+    """
+
+    def __init__(self, dim: int, max_seq_len: int = 4096, base: int = 10_000):
+
+        """
+        Rotary Positional Embeddings (RoPE) module.
+        
+        Args:
+            dim (int): Dimension of the embeddings (must be even).
+            max_seq_len (int): Maximum sequence length.
+            base (int): Base for the rotary embeddings.
+        """
+
         super().__init__()
         self.dim = dim
         self.base = base
@@ -20,12 +35,20 @@ class RotaryPositionalEmbeddings(nn.Module):
         self.register_buffer("cache", cache, persistent=False)
 
     def forward(self, x: torch.Tensor, *, input_pos = None) -> torch.Tensor:
+
+        """
+        Forward pass of the rotary positional embeddings.
+        Args:
+            x (torch.Tensor): Input tensor of shape (B, T, num_heads, head_size).
+            input_pos (torch.Tensor, optional): Tensor of shape (T,) indicating the position indices for each token.
+
+        Returns:
+            torch.Tensor: Output tensor of shape (B, T, num_heads, head_size).
+        """
        
         seq_len = x.size(1)
-        rope_cache = (self.cache[:seq_len] if input_pos is None else self.cache[input_pos])
+        rope_cache = (self.cache[:seq_len].unsqueeze(0).unsqueeze(2) if input_pos is None else self.cache[input_pos].unsqueeze(2))
         xshaped = x.reshape(*x.shape[:-1], -1, 2)
-
-        rope_cache = rope_cache.view(-1, xshaped.size(1), 1, xshaped.size(3), 2)
 
         x_out = torch.stack([
             xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1], 
