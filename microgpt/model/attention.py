@@ -8,7 +8,16 @@ from microgpt.model.rope import RotaryPositionalEmbeddings
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, config: Config, use_lora: bool = False) -> None:
+    def __init__(self, config: Config, use_lora: bool = False):
+
+        """
+        Multi-Head Self-Attention module with optional LoRA adaptation
+        and Rotary Positional Embeddings (RoPE).
+
+        Args:
+            config (Config): Configuration object containing model hyperparameters.
+            use_lora (bool): Whether to apply LoRA adapters to QKV projections.
+        """
 
         super().__init__()
         assert config.embedding_dim % config.num_heads == 0, 'embedding_dim must be divisible by num_heads'
@@ -21,12 +30,24 @@ class MultiHeadAttention(nn.Module):
 
         self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
         if use_lora:
-            self.lora_attn = LoRALinear(self.attn, config.lora_rank, config.lora_alpha) 
+            self.lora_attn = LoRALinear(self.attn, config.lora_rank, config.lora_alpha, config.dropout) 
         
         self.rope = RotaryPositionalEmbeddings(dim=self.head_size, max_seq_len=config.context_size)
         self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
 
-    def forward(self, x, pad_mask=None):
+    def forward(self, x: torch.Tensor, pad_mask: torch.Tensor | None = None) -> torch.Tensor:
+
+        """
+        Forward pass of the multi-head attention.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (B, T, C).
+            pad_mask (torch.Tensor, optional): Boolean mask to ignore padding tokens, shape (B, T).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (B, T, C).
+        """
+
         B, T, C = x.size()
 
         if self.use_lora:
@@ -56,7 +77,19 @@ class MultiHeadAttention(nn.Module):
         return x
     
 class LoRALinear(nn.Module):
-    def __init__(self, base_linear: nn.Linear, rank, alpha, dropout=0.1):
+
+    def __init__(self, base_linear: nn.Linear, rank: int, alpha: int, dropout: float):
+
+        """
+        LoRA-adapted Linear layer.
+
+        Args:
+            base_linear (nn.Linear): The base linear layer to adapt.
+            rank (int): The rank of the LoRA adaptation.
+            alpha (float): Scaling factor for the LoRA adaptation.
+            dropout (float): Dropout rate for the LoRA adaptation.
+        """
+
         super().__init__()
 
         self.base = base_linear
@@ -67,6 +100,17 @@ class LoRALinear(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.scaling = self.alpha / self.A.size(1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        """
+        Forward pass of the lora adapter.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (B, T, C).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (B, T, C).
+        """
+
         lora_out = self.dropout(x @ self.A @ self.B) * self.scaling
         return self.base(x) + lora_out
