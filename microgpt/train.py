@@ -57,23 +57,18 @@ def train(args):
     elif args.mode == 'finetune':
         dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, device=device)
         val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='validation', device=device)
-        model = FinetuneModel(config).to(device)
+        
+        checkpoint = torch.load(args.model_load_path, weights_only=True)
+        model = FinetuneModel(config, checkpoint['model_state_dict']).to(device)
 
     elif args.mode == 'reward':
         dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size,save_path='hh_rlhf_tokens.bin', split='train', device=device)
         val_dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size, save_path='hh_rlhf_tokens_test.bin', split='test', device=device)
-        model = RewardModel(config).to(device)
+
+        checkpoint = torch.load(args.model_load_path, weights_only=True)
+        model = RewardModel(config, checkpoint['model_state_dict']).to(device)
 
     total_steps = len(dataset) // args.batch_size
-    
-    if args.mode != 'pretrain' and args.model_load_path: # only pretrain will start without a checkpoint
-        checkpoint = torch.load(args.model_load_path, weights_only=True)
-
-        if args.mode == 'reward':
-            del checkpoint["model_state_dict"]["transformer.lm_head.weight"]
-
-        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,max_lr=args.max_lr, total_steps=total_steps*args.epochs, pct_start=0.05, anneal_strategy='cos')
     scaler = torch.amp.GradScaler(device)
@@ -96,7 +91,7 @@ def train(args):
                 
                 b_xb = xb[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True)
                 b_yb = yb[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True)
-                b_mask = mask[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True) if args.mode == 'finetune' else None
+                b_mask = mask[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True) if mask is not None else None
 
                 with torch.autocast(device_type=device, dtype=torch.float16):
                     _, loss = model(b_xb, b_yb, b_mask)
@@ -127,15 +122,21 @@ def train(args):
         if val_dataset:
             
             val_loss = 0.0
+            correct = 0
             val_dataloader = build_dataloader(val_dataset, args.batch_acc_size, g, shuffle=False)
             model.eval()
             with torch.no_grad():
                 for xb, yb, mask in val_dataloader:
                     xb, yb, mask = xb.to(device), yb.to(device), mask.to(device)
-                    _, loss = model(xb, yb, mask)
+                    out, loss = model(xb, yb, mask)
                     val_loss += loss.item()
+
+                    if args.mode == 'reward':
+                        correct += (out[0] > out[1]).sum().item()
+
             val_loss /= len(val_dataloader)
-            print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}")
+            print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}", end='')
+            print(f' | accuracy: {correct/len(val_dataset)*100:.2f}%') if args.mode == 'reward' else print('')
             model.train()
 
             if val_loss <= min_val_loss:
