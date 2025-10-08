@@ -10,6 +10,5 @@ setup(
     license="MIT",
     packages=find_packages(exclude=["tests", "weights"]),
     include_package_data=True,
-    install_requires=open("requirements.txt").read().splitlines(),
     python_requires=">=3.8",
 )
