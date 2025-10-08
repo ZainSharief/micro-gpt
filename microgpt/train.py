@@ -56,7 +56,7 @@ def train(args):
 
     elif args.mode == 'finetune':
         dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, device=device)
-        val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='validation', device=device)
+        val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='test', device=device)
         
         checkpoint = torch.load(args.model_load_path, weights_only=True)
         model = FinetuneModel(config, checkpoint['model_state_dict']).to(device)

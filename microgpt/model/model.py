@@ -122,9 +122,13 @@ class GPTModel(nn.Module):
     
 class PretrainModel(GPTModel):
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, model_dict: dict | None = None, train: bool = True):
 
         super().__init__(config, use_lora=False)
+
+        if not train and model_dict is not None:
+            self.load_state_dict(model_dict, strict=True)
+            return
 
         # weight tying
         self.transformer.lm_head.weight = self.transformer.wte.weight
@@ -178,7 +182,7 @@ class PretrainModel(GPTModel):
             probs, idxs = torch.topk(logits, self.config.k)
 
             probs = F.softmax(probs, dim=-1)
-            idx = idxs[:, torch.multinomial(probs, num_samples=1)]
+            idx = idxs[0, torch.multinomial(probs, num_samples=1)]
 
             # stops if eos token is generated
             if idx.item() == tokenizer.eos_token_id:
@@ -191,8 +195,12 @@ class PretrainModel(GPTModel):
     
 class FinetuneModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict):
+    def __init__(self, config: Config, model_dict: dict, train: bool = True):
         super().__init__(config, use_lora=True)
+
+        if not train:
+            self.load_state_dict(model_dict, strict=True)
+            return
 
         # freezes all parameters except for layernorm, embedding, lm_head and LoRA adapters
         for param in self.parameters():
@@ -201,7 +209,7 @@ class FinetuneModel(GPTModel):
         for name, param in self.transformer.named_parameters():
             param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
 
-        self.transformer.load_state_dict(model_dict, strict=False)
+        self.load_state_dict(model_dict, strict=False)
 
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
         B, T, C = xb.shape
@@ -255,7 +263,7 @@ class FinetuneModel(GPTModel):
             probs, idxs = torch.topk(logits, self.config.k)
 
             probs = F.softmax(probs, dim=-1)
-            idx = idxs[:, torch.multinomial(probs, num_samples=1)].squeeze(0)
+            idx = idxs[0, torch.multinomial(probs, num_samples=1)]
 
             # stops if end_assistant token is generated
             if idx.item() == tokenizer.end_assistant_token_id:
@@ -268,8 +276,12 @@ class FinetuneModel(GPTModel):
     
 class RewardModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict) -> None:
+    def __init__(self, config: Config, model_dict: dict, train: bool = True):
         super().__init__(config, use_lora=True)
+
+        if not train:
+            self.load_state_dict(model_dict, strict=True)
+            return
 
         # replaces lm_head with a linear layer outputting a single scalar value
         self.transformer.lm_head = nn.Linear(self.config.embedding_dim, 1, bias=True)
@@ -279,11 +291,11 @@ class RewardModel(GPTModel):
             param.requires_grad = False
 
         for name, param in self.transformer.named_parameters():
-            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
+            param.requires_grad = any(x in name for x in ["lm_head", "norm", "A", "B"])
 
         self.apply(self._init_weights)
         del model_dict["transformer.lm_head.weight"]
-        self.transformer.load_state_dict(model_dict, strict=False)
+        self.load_state_dict(model_dict, strict=False)
 
     def calculate_loss(self, sA: torch.Tensor, sB: torch.Tensor) -> torch.Tensor:
         return -F.logsigmoid(sA - sB).mean()
