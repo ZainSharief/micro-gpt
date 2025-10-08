@@ -32,13 +32,10 @@ class DummyDataset(torch.utils.data.Dataset):
             self.data = torch.concat([self.data, torch.zeros(pad_size + 1, dtype=torch.long, device=device)], dim=-1)
     
     def __len__(self):
-        return 1_000_000
+        return 1_000
 
     def __getitem__(self, _):  
         return self.data[:-1], self.data[1:]
-    
-    def get_first_token(self):
-        return self.tokenizer.decode(self.data[0])
 
 def main():
 
@@ -54,12 +51,12 @@ def main():
     dataset = DummyDataset(tokenizer=tokenizer, context_size=config.context_size, device=device) 
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
-    model = PretrainModel(config, use_lora=False)
+    model = PretrainModel(config)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
         max_lr=max_lr,
-        total_steps=1_000_000,
+        total_steps=1_000,
         pct_start=0.1, 
         anneal_strategy='cos'
     )

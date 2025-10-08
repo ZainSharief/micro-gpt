@@ -25,14 +25,16 @@ class DummyDataset(torch.utils.data.Dataset):
         + self.tokenizer.assistant_token + 'The capital of France is Paris.' + self.tokenizer.end_assistant_token
 
         self.data = self.tokenizer.encode(text).to(device).squeeze(0)
-        self.loss_mask = self.build_loss_mask(self.data[1:], self.tokenizer.assistant_token, self.tokenizer.end_assistant_token)
+        self.loss_mask = self.build_loss_mask(self.data[1:], self.tokenizer.assistant_token_id, self.tokenizer.end_assistant_token_id)
 
         if self.data.size(-1) > self.context_size:
-            self.data = self.data[:self.context_size]
+            self.data = self.data[:self.context_size+1]
+            self.loss_mask = self.loss_mask[:self.context_size]
         
         elif self.data.size(-1) < self.context_size:
             pad_size = self.context_size - self.data.size(-1)
             self.data = torch.concat([self.data, torch.zeros(pad_size + 1, dtype=torch.long, device=device)], dim=-1)
+            self.loss_mask = torch.concat([self.loss_mask, torch.zeros(pad_size + 1, dtype=torch.long, device=device)], dim=-1)
     
     def build_loss_mask(self, y, assistant_id, end_assistant_id):
        
@@ -54,9 +56,6 @@ class DummyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, _):  
         return self.data[:-1], self.data[1:], self.loss_mask
-    
-    def get_first_token(self):
-        return self.tokenizer.decode(self.data[0])
 
 def main():
 
@@ -72,7 +71,8 @@ def main():
     dataset = DummyDataset(tokenizer=tokenizer, context_size=config.context_size, device=device) 
     dataloader = DataLoader(dataset, batch_size=batch_size)
 
-    model = FinetuneModel(config, use_lora=True)
+    checkpoint = torch.load('weights/base_model_checkpoint_190000.pth', map_location=device)
+    model = FinetuneModel(config, checkpoint['model_state_dict'])
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
