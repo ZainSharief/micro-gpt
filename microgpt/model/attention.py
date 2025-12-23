@@ -9,7 +9,7 @@ from microgpt.model.rope import RotaryPositionalEmbeddings
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, config: Config, use_lora: bool = False):
+    def __init__(self, config: Config, use_lora: bool = False, dropout: float = 0.0):
         super().__init__()
         assert config.embedding_dim % config.num_heads == 0, 'embedding_dim must be divisible by num_heads'
         
@@ -18,7 +18,7 @@ class MultiHeadAttention(nn.Module):
         self.num_kv_heads = config.num_kv_heads
         self.head_dim = config.embedding_dim // config.num_heads
         self.num_kv_groups = self.num_heads // self.num_kv_heads
-        self.dropout = config.dropout
+        self.dropout = dropout
         self.use_lora = use_lora
 
         self.rope = RotaryPositionalEmbeddings(dim=self.head_dim, max_seq_len=config.context_size)
@@ -29,9 +29,9 @@ class MultiHeadAttention(nn.Module):
         self.wo = nn.Linear(self.num_heads * self.head_dim, self.embedding_dim, bias=False)
 
         if self.use_lora:
-            self.wq = LoRALinear(self.wq, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
-            self.wk = LoRALinear(self.wk, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
-            self.wv = LoRALinear(self.wv, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
+            self.wq = LoRALinear(self.wq, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
+            self.wk = LoRALinear(self.wk, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
+            self.wv = LoRALinear(self.wv, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
 
     def repeat_kv(self, x: torch.Tensor, num_repeats: int) -> torch.Tensor:
         B, T, n_kv, d = x.shape

@@ -1,6 +1,7 @@
 #!/bin/bash
 python -u microgpt/train.py \
     --mode pretrain \
+    --dropout 0.0 \
     --seed 411 \
     --epochs 1 \
     --batch_size 128 \

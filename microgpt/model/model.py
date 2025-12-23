@@ -8,14 +8,14 @@ from microgpt.tokenizer.tokenizer import GPTtokenizer
 
 class GPTModel(nn.Module):
         
-    def __init__(self, config: Config, use_lora: bool = True):
+    def __init__(self, config: Config, use_lora: bool = True, dropout: float = 0.0):
         super().__init__()
         self.config = config
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.embedding_dim),
-            dropout = nn.Dropout(p=config.dropout),
-            decoder = nn.Sequential(Block(config, use_lora) for _ in range(config.num_layers)),
+            dropout = nn.Dropout(p=dropout),
+            decoder = nn.Sequential(*[Block(config, use_lora, dropout) for _ in range(config.num_layers)]),
             norm = nn.RMSNorm(config.embedding_dim),
             lm_head = nn.Linear(config.embedding_dim, config.vocab_size, bias=False)
         ))
@@ -37,10 +37,10 @@ class GPTModel(nn.Module):
     
 class PretrainModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict | None = None, train: bool = True):
-        super().__init__(config, use_lora=False)
+    def __init__(self, config: Config, model_dict: dict | None = None, dropout: float = 0.0):
+        super().__init__(config, use_lora=False, dropout=dropout)
 
-        if not train:
+        if model_dict is not None:
             self.load_state_dict(model_dict, strict=True)
             return
 
@@ -100,10 +100,10 @@ class PretrainModel(GPTModel):
     
 class FinetuneModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict, train: bool = True):
-        super().__init__(config, use_lora=True)
+    def __init__(self, config: Config, model_dict: dict, dropout: float = 0.0):
+        super().__init__(config, use_lora=True, dropout=dropout)
 
-        if not train:
+        if model_dict is not None:
             self.load_state_dict(model_dict, strict=True)
             return
 

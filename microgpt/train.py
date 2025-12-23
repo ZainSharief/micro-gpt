@@ -48,14 +48,14 @@ def train(args):
     if args.mode == 'pretrain':
         dataset = FineWeb(tokenizer=tokenizer, context_size=config.context_size, device=device)
         val_dataset = None
-        model = PretrainModel(config).to(device)
+        model = PretrainModel(config, dropout=args.dropout).to(device)
 
     elif args.mode == 'finetune':
         dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, device=device)
         val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='test', device=device)
         
         checkpoint = torch.load(args.model_load_path, weights_only=True)
-        model = FinetuneModel(config, checkpoint['model_state_dict']).to(device)
+        model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
 
     model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
@@ -114,7 +114,6 @@ def train(args):
         if val_dataset:
             
             val_loss = 0.0
-            correct = 0
             val_dataloader = build_dataloader(val_dataset, args.batch_acc_size, g, shuffle=False)
             model.eval()
             with torch.no_grad():
@@ -137,6 +136,7 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune'])
+    parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--model_load_path', type=str, default=None)
     parser.add_argument('--seed', type=int, default=411)
     parser.add_argument('--epochs', type=int, default=8)

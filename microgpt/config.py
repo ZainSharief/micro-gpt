@@ -9,7 +9,6 @@ class Config:
     num_kv_heads: int = 4
     num_layers: int = 12
     max_norm: float = 1.0
-    dropout: float = 0.1
     projection: int = 4
 
     vocab_size: int = 50261

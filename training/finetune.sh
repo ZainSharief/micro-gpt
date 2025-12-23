@@ -1,6 +1,7 @@
 #!/bin/bash
 python -u microgpt/train.py \
     --mode finetune \
+    --dropout 0.1 \
     --model_load_path weights/base_model_checkpoint_190000.pth \
     --seed 411 \
     --epochs 8 \

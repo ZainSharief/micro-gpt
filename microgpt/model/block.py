@@ -7,17 +7,16 @@ from microgpt.model.attention import MultiHeadAttention
 
 class Block(nn.Module):
 
-    def __init__(self, config: Config, use_lora: bool = False):
+    def __init__(self, config: Config, use_lora: bool = False, dropout: float = 0.0):
         super().__init__()
 
         self.rmsnorm_1 = nn.RMSNorm(config.embedding_dim)
         self.multiheadattention = MultiHeadAttention(config, use_lora)
-        self.dropout_1 = nn.Dropout(config.dropout)
+        self.dropout_1 = nn.Dropout(dropout)
 
         self.rmsnorm_2 = nn.RMSNorm(config.embedding_dim)
         self.mlp = MLP(config.embedding_dim, config.projection)
-        self.dropout_2 = nn.Dropout(config.dropout)
-
+        self.dropout_2 = nn.Dropout(dropout)
         self.residual_scale = 1.0 / (2 * config.num_layers) ** 0.5  
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
