@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from microgpt.config import Config
 from microgpt.model.attention import MultiHeadAttention
@@ -40,12 +41,7 @@ class Block(nn.Module):
             
         Returns:
             torch.Tensor: Output tensor of shape (B, T, C).
-
-        Note:
-            - When training, I did not remember to use residual scaling. In future work, remove the following line 
-              to enable it.
         """
-        self.residual_scale = 1.0 # remove this line to enable residual scaling
 
         x = x + (self.residual_scale * self.dropout_1(self.multiheadattention(self.rmsnorm_1(x), pad_mask)))
         x = x + (self.residual_scale * self.dropout_2(self.mlp(self.rmsnorm_2(x))))
@@ -56,7 +52,7 @@ class MLP(nn.Module):
     def __init__(self, embedding_dim: int, projection: int = 4):
 
         """
-        Feedforward MLP module.
+        SwiGLU MLP implementation.
 
         Args:
             embedding_dim (int): The input and output dimension of the MLP.
@@ -65,11 +61,10 @@ class MLP(nn.Module):
 
         super().__init__()
 
-        self.feedforward = nn.Sequential(
-            nn.Linear(embedding_dim, projection * embedding_dim),
-            nn.GELU(),
-            nn.Linear(projection * embedding_dim, embedding_dim),
-        )
+        hidden_dim = embedding_dim * projection
+        self.w1 = nn.Linear(embedding_dim, hidden_dim, bias=False) # Gate Projection
+        self.w2 = nn.Linear(embedding_dim, hidden_dim, bias=False) # Value Projection
+        self.w3 = nn.Linear(hidden_dim, embedding_dim, bias=False) # Output Projection
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -83,4 +78,4 @@ class MLP(nn.Module):
             torch.Tensor: Output tensor of shape (B, T, C).
         """
 
-        return self.feedforward(x)
+        return self.w3(F.silu(self.w1(x)) * self.w2(x))
