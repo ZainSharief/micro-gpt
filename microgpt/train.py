@@ -8,12 +8,9 @@ import os
 
 from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.config import Config
-
 from microgpt.data.fineweb import FineWeb
 from microgpt.data.hh_rlhf_chosen import HH_RLHF_Chosen
-from microgpt.data.hh_rlhf import HH_RLHF
-
-from microgpt.model.model import PretrainModel, FinetuneModel, RewardModel
+from microgpt.model.model import PretrainModel, FinetuneModel
 
 def set_seed(seed=411):
     random.seed(seed)
@@ -31,13 +28,12 @@ def get_device():
 def build_dataloader(dataset, batch_size, generator, shuffle=True):
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True, generator=generator)
 
-def save_checkpoint(model, optimizer, scheduler, scaler, path):
+def save_checkpoint(model, optimizer, scheduler, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
-        'scaler_state_dict': scaler.state_dict()
     }
     torch.save(checkpoint, path)
 
@@ -61,17 +57,15 @@ def train(args):
         checkpoint = torch.load(args.model_load_path, weights_only=True)
         model = FinetuneModel(config, checkpoint['model_state_dict']).to(device)
 
-    elif args.mode == 'reward':
-        dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size,save_path='hh_rlhf_tokens.bin', split='train', device=device)
-        val_dataset = HH_RLHF(tokenizer=tokenizer, context_size=config.context_size, save_path='hh_rlhf_tokens_test.bin', split='test', device=device)
-
-        checkpoint = torch.load(args.model_load_path, weights_only=True)
-        model = RewardModel(config, checkpoint['model_state_dict']).to(device)
-
+    model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
-    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), 
+        lr=args.lr, 
+        weight_decay=args.weight_decay,
+        fused=True
+    )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,max_lr=args.max_lr, total_steps=total_steps*args.epochs, pct_start=0.05, anneal_strategy='cos')
-    scaler = torch.amp.GradScaler(device)
 
     batch_acc_steps = args.batch_size // args.batch_acc_size
     min_val_loss = float('inf')
@@ -93,17 +87,15 @@ def train(args):
                 b_yb = yb[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True)
                 b_mask = mask[i*args.batch_acc_size:(i+1)*args.batch_acc_size].to(device, non_blocking=True) if mask is not None else None
 
-                with torch.autocast(device_type=device, dtype=torch.float16):
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
                     _, loss = model(b_xb, b_yb, b_mask)
                     loss = loss / batch_acc_steps
                 
-                    scaler.scale(loss).backward()
+                    loss.backward()
                     total_loss += loss.item()
 
-            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_norm)
-            scaler.step(optimizer)
-            scaler.update()
+            optimizer.step()
             scheduler.step()
 
             step_time = time.time() - start_time
@@ -115,7 +107,7 @@ def train(args):
 
             counter += 1
             if args.mode == 'pretrain' and (current_batch + 1) % args.save_iter == 0:
-                save_checkpoint(model, optimizer, scheduler, scaler, f'weights/base_model_checkpoint_{current_batch+1}.pth')
+                save_checkpoint(model, optimizer, scheduler, f'weights/base_model_checkpoint_{current_batch+1}.pth')
                 total_loss = 0.0
                 counter = 0
 
@@ -128,27 +120,23 @@ def train(args):
             with torch.no_grad():
                 for xb, yb, mask in val_dataloader:
                     xb, yb, mask = xb.to(device), yb.to(device), mask.to(device)
-                    out, loss = model(xb, yb, mask)
+                    _, loss = model(xb, yb, mask)
                     val_loss += loss.item()
 
-                    if args.mode == 'reward':
-                        correct += (out[0] > out[1]).sum().item()
-
             val_loss /= len(val_dataloader)
-            print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}", end='')
-            print(f' | accuracy: {correct/len(val_dataset)*100:.2f}%') if args.mode == 'reward' else print('')
+            print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}")
             model.train()
 
             if val_loss <= min_val_loss:
                 min_val_loss = val_loss
                 save_path = args.checkpoint_path.replace('.pth', f'_{epoch+1}.pth')
-                save_checkpoint(model, optimizer, scheduler, scaler, save_path)
+                save_checkpoint(model, optimizer, scheduler, save_path)
 
     torch.save(model.state_dict(), args.final_path)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune', 'reward'])
+    parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune'])
     parser.add_argument('--model_load_path', type=str, default=None)
     parser.add_argument('--seed', type=int, default=411)
     parser.add_argument('--epochs', type=int, default=8)
