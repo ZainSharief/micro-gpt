@@ -20,6 +20,8 @@ class GPTModel(nn.Module):
             lm_head = nn.Linear(config.embedding_dim, config.vocab_size, bias=False)
         ))
 
+        self.transformer.lm_head.weight = self.transformer.wte.weight
+
     def _init_weights(self, module: nn.Module) -> None:
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -44,8 +46,6 @@ class PretrainModel(GPTModel):
             self.load_state_dict(model_dict, strict=True)
             return
 
-        # weight tying
-        self.transformer.lm_head.weight = self.transformer.wte.weight
         self.apply(self._init_weights) 
            
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, *args) -> torch.Tensor:
@@ -100,19 +100,26 @@ class PretrainModel(GPTModel):
     
 class FinetuneModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict, dropout: float = 0.0):
+    def __init__(self, config: Config, model_dict: dict, train : bool = True, dropout: float = 0.0):
         super().__init__(config, use_lora=True, dropout=dropout)
 
-        if model_dict is not None:
-            self.load_state_dict(model_dict, strict=True)
+        if not train:
+            self.load_state_dict(model_dict, strict=False) 
             return
 
+        # rename some keys to match the LoRA layers
+        for k, v in model_dict.items():
+            if any(sub in k for sub in ['.wq.weight', '.wk.weight', '.wv.weight']):
+                new_key = k.replace('.weight', '.base.weight')
+                model_dict[new_key] = v
+
+        self.load_state_dict(model_dict, strict=True)
+
+        # freezing all non-lora layers 
         for param in self.parameters():
             param.requires_grad = False
         for name, param in self.transformer.named_parameters():
             param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
-
-        self.load_state_dict(model_dict, strict=False)
 
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
         B, T, C = xb.shape
