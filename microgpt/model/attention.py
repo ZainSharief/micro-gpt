@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 import math
 
 from microgpt.config import Config
@@ -9,108 +10,74 @@ from microgpt.model.rope import RotaryPositionalEmbeddings
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, config: Config, use_lora: bool = False):
-
-        """
-        Multi-Head Self-Attention module with optional LoRA adaptation
-        and Rotary Positional Embeddings (RoPE).
-
-        Args:
-            config (Config): Configuration object containing model hyperparameters.
-            use_lora (bool): Whether to apply LoRA adapters to QKV projections.
-        """
-
         super().__init__()
         assert config.embedding_dim % config.num_heads == 0, 'embedding_dim must be divisible by num_heads'
         
-        self.head_size = config.embedding_dim // config.num_heads
-        self.num_heads = config.num_heads
         self.embedding_dim = config.embedding_dim
+        self.num_heads = config.num_heads
+        self.num_kv_heads = config.num_kv_heads
+        self.head_dim = config.embedding_dim // config.num_heads
+        self.num_kv_groups = self.num_heads // self.num_kv_heads
         self.dropout = config.dropout
         self.use_lora = use_lora
 
-        self.attn = nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
-        if use_lora:
-            self.lora_attn = LoRALinear(self.attn, config.lora_rank, config.lora_alpha, config.dropout) 
-        
-        self.rope = RotaryPositionalEmbeddings(dim=self.head_size, max_seq_len=config.context_size)
-        self.proj = nn.Linear(self.embedding_dim, self.embedding_dim)
+        self.rope = RotaryPositionalEmbeddings(dim=self.head_dim, max_seq_len=config.context_size)
 
-    def forward(self, x: torch.Tensor, pad_mask: torch.Tensor | None = None) -> torch.Tensor:
-
-        """
-        Forward pass of the multi-head attention.
-
-        Args:
-            x (torch.Tensor): Input tensor of shape (B, T, C).
-            pad_mask (torch.Tensor, optional): Boolean mask to ignore padding tokens, shape (B, T).
-
-        Returns:
-            torch.Tensor: Output tensor of shape (B, T, C).
-        """
-
-        B, T, C = x.size()
+        self.wq = nn.Linear(self.embedding_dim, self.num_heads * self.head_dim, bias=False)
+        self.wk = nn.Linear(self.embedding_dim, self.num_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(self.embedding_dim, self.num_kv_heads * self.head_dim, bias=False)
+        self.wo = nn.Linear(self.num_heads * self.head_dim, self.embedding_dim, bias=False)
 
         if self.use_lora:
-            q, k, v = self.lora_attn(x).split(self.embedding_dim, dim=2)
-        else:
-            q, k, v = self.attn(x).split(self.embedding_dim, dim=2)
+            self.wq = LoRALinear(self.wq, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
+            self.wk = LoRALinear(self.wk, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
+            self.wv = LoRALinear(self.wv, rank=config.lora_rank, alpha=config.lora_alpha, dropout=config.dropout)
 
-        # (B, T, num_heads, head_size)
-        q = q.view(B, T, self.num_heads, self.head_size)
-        k = k.view(B, T, self.num_heads, self.head_size)
-        v = v.view(B, T, self.num_heads, self.head_size)
+    def repeat_kv(self, x: torch.Tensor, num_repeats: int) -> torch.Tensor:
+        B, T, n_kv, d = x.shape
+        if num_repeats == 1:
+            return x
+        
+        # (B, T, n_kv, 1, d) -> (B, T, n_kv, num_repeats, d) -> (B, T, n_heads, d)
+        return x[:, :, :, None, :].expand(B, T, n_kv, num_repeats, d).reshape(B, T, n_kv * num_repeats, d)
 
-        q = self.rope(q)
-        k = self.rope(k)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.size()
 
-        # (B, num_heads, T, head_size)
+        # (B, T, num_heads, head_dim)
+        q = self.rope(self.wq(x).view(B, T, self.num_heads, self.head_dim))
+
+        # (B, T, num_kv_heads, head_dim)
+        k = self.rope(self.wk(x).view(B, T, self.num_kv_heads, self.head_dim))
+        v = self.wv(x).view(B, T, self.num_kv_heads, self.head_dim)
+
+        # (B, T, num_kv_heads, D) -> (B, T, num_heads, D)
+        k = self.repeat_kv(k, self.num_kv_groups)
+        v = self.repeat_kv(v, self.num_kv_groups)
+
+        # (B, num_heads, T, head_dim)
         q = q.transpose(1, 2)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        attn_mask = torch.tril(torch.ones(1, 1, q.size(-2), k.size(-2), dtype=torch.bool, device=x.device))
-        attn_mask = attn_mask if pad_mask is None else attn_mask & pad_mask
-
-        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.dropout)
+        with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
+            x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=True)
         x = x.transpose(1, 2).contiguous().view(B, T, C)
-        x = self.proj(x)
-        return x
+        return self.wo(x)
     
 class LoRALinear(nn.Module):
 
     def __init__(self, base_linear: nn.Linear, rank: int, alpha: int, dropout: float):
-
-        """
-        LoRA-adapted Linear layer.
-
-        Args:
-            base_linear (nn.Linear): The base linear layer to adapt.
-            rank (int): The rank of the LoRA adaptation.
-            alpha (float): Scaling factor for the LoRA adaptation.
-            dropout (float): Dropout rate for the LoRA adaptation.
-        """
-
         super().__init__()
 
         self.base = base_linear
         self.A = nn.Parameter(torch.randn(base_linear.in_features, rank))
-        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
         self.B = nn.Parameter(torch.zeros(rank, base_linear.out_features))
-        self.alpha = alpha
+        self.scaling = alpha / self.A.size(1)
         self.dropout = nn.Dropout(dropout)
-        self.scaling = self.alpha / self.A.size(1)
 
+        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
-        """
-        Forward pass of the lora adapter.
-
-        Args:
-            x (torch.Tensor): Input tensor of shape (B, T, C).
-
-        Returns:
-            torch.Tensor: Output tensor of shape (B, T, C).
-        """
-
-        lora_out = self.dropout(x @ self.A @ self.B) * self.scaling
+        lora_out = (self.dropout(x) @ self.A @ self.B) * self.scaling
         return self.base(x) + lora_out
