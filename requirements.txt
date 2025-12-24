@@ -1,6 +1,0 @@
-datasets==3.3.2
-numpy==2.3.3
-setuptools==75.8.2
-torch==2.6.0+cu126 --index-url https://download.pytorch.org/whl/cu126
-transformers==4.49.0
-flash-attn==2.8.3 --no-build-isolation
