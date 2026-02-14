@@ -19,6 +19,9 @@ dependencies = [
 [project.optional-dependencies]
 flash-attn = ["flash-attn==2.8.3"]
 
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch==2.6.0", "setuptools", "packaging"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

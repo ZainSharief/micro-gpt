@@ -5,7 +5,7 @@ python -u microgpt/train.py \
     --seed 411 \
     --epochs 1 \
     --batch_size 128 \
-    --batch_acc_size 32 \
+    --batch_acc_size 8 \
     --weight_decay 0.01 \
     --lr 5e-5 \
     --max_lr 3e-4 \

@@ -74,7 +74,7 @@ Example prompts:
   ```sh
   uv sync
   ```
-  or 
+  and then 
   ```sh
   uv sync --extra flash-attn
   ```

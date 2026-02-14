@@ -65,7 +65,7 @@ def train(args):
         checkpoint = torch.load(args.model_load_path, weights_only=True)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
 
-    model = torch.compile(model)
+    #model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), 
@@ -89,6 +89,7 @@ def train(args):
 
             start_time = time.time()
             optimizer.zero_grad(set_to_none=True)
+            batch_loss = 0.0
 
             for i in range(batch_acc_steps):
                 
@@ -101,9 +102,10 @@ def train(args):
                     loss = loss / batch_acc_steps
                 
                     loss.backward()
-                    total_loss += loss.item()
-                    wandb.log({"train_loss": loss.item(), "lr": scheduler.get_last_lr()[0]})
-
+                    batch_loss += loss.item()
+                    
+            total_loss += batch_loss
+            wandb.log({"train_loss": batch_loss})
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_norm)
             optimizer.step()
             scheduler.step()

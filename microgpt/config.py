@@ -4,14 +4,14 @@ from dataclasses import dataclass
 class Config:
     
     embedding_dim: int = 768
-    context_size: int = 2048
+    context_size: int = 1024
     num_heads: int = 16
     num_kv_heads: int = 4
     num_layers: int = 12
     max_norm: float = 1.0
     projection: int = 4
 
-    vocab_size: int = 50261
+    vocab_size: int = 50304 # round to the nearest 128
     pad_token_id: int = 0
 
     lora_rank: int = 16
