@@ -9,6 +9,6 @@ python -u microgpt/train.py \
     --weight_decay 0.01 \
     --lr 5e-5 \
     --max_lr 3e-4 \
-    --save_iter 5000 \
+    --save_iter 500 \
     --checkpoint_path weights/pretrain_checkpoint.pth \
     --final_path weights/base_model.pth
