@@ -31,8 +31,10 @@ def build_dataloader(dataset, batch_size, generator, shuffle=True):
         batch_size=batch_size, 
         shuffle=shuffle, 
         drop_last=True, 
-        num_workers=4,
+        num_workers=6,
         pin_memory=True,
+        prefetch_factor=4,
+        persistent_workers=True,
         generator=generator
     )
 
@@ -65,7 +67,7 @@ def train(args):
         checkpoint = torch.load(args.model_load_path, weights_only=True)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
 
-    #model = torch.compile(model)
+    model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), 
@@ -89,7 +91,7 @@ def train(args):
 
             start_time = time.time()
             optimizer.zero_grad(set_to_none=True)
-            batch_loss = 0.0
+            batch_loss = torch.tensor(0.0, device=device)
 
             for i in range(batch_acc_steps):
                 
@@ -102,9 +104,9 @@ def train(args):
                     loss = loss / batch_acc_steps
                 
                     loss.backward()
-                    batch_loss += loss.item()
+                    batch_loss += loss.detach()
                     
-            total_loss += batch_loss
+            total_loss += batch_loss.item()
             wandb.log({"train_loss": batch_loss})
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_norm)
             optimizer.step()
@@ -115,7 +117,7 @@ def train(args):
                   f'| batch: {current_batch+1}/{total_steps} ' + \
                   f'| loss: {total_loss/(counter+1):.4f} ' + \
                   f'| lr: {scheduler.get_last_lr()[0]:.4e} ' + \
-                  f'| step_time: {int(step_time*1000)}ms', end='') 
+                  f'| step_time: {int(step_time*1000)}ms  ', end='') 
 
             counter += 1
             if args.mode == 'pretrain' and (current_batch + 1) % args.save_iter == 0:
