@@ -5,6 +5,7 @@ import numpy as np
 import time
 import argparse
 import os
+import wandb
 
 from microgpt.config import Config
 from microgpt.tokenizer import GPTtokenizer
@@ -73,6 +74,7 @@ def train(args):
         fused=True
     )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,max_lr=args.max_lr, total_steps=total_steps*args.epochs, pct_start=0.05, anneal_strategy='cos')
+    wandb.init(project="microgpt-pretrain", config=args)
 
     batch_acc_steps = args.batch_size // args.batch_acc_size
     min_val_loss = float('inf')
@@ -100,6 +102,7 @@ def train(args):
                 
                     loss.backward()
                     total_loss += loss.item()
+                    wandb.log({"train_loss": loss.item(), "lr": scheduler.get_last_lr()[0]})
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_norm)
             optimizer.step()
