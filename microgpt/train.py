@@ -25,7 +25,15 @@ def get_device():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def build_dataloader(dataset, batch_size, generator, shuffle=True):
-    return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True, generator=generator)
+    return DataLoader(
+        dataset=dataset, 
+        batch_size=batch_size, 
+        shuffle=shuffle, 
+        drop_last=True, 
+        num_workers=4,
+        pin_memory=True,
+        generator=generator
+    )
 
 def save_checkpoint(model, optimizer, scheduler, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
