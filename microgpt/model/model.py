@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from microgpt.model.block import Block
-from microgpt.config import Config
-from microgpt.tokenizer.tokenizer import GPTtokenizer
+from microgpt import Config
+from microgpt.tokenizer import GPTtokenizer
+from .block import Block
 
 class GPTModel(nn.Module):
         

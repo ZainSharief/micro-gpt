@@ -2,9 +2,9 @@ import torch
 from torch.utils.data import DataLoader
 import time
 
-from microgpt.tokenizer.tokenizer import GPTtokenizer
-from microgpt.config import Config
-from microgpt.model.model import PretrainModel
+from microgpt import Config
+from microgpt.tokenizer import GPTtokenizer
+from microgpt.model import PretrainModel
 
 '''
 Testing the architecture of the base model.

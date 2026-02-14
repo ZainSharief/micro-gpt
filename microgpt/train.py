@@ -6,11 +6,10 @@ import time
 import argparse
 import os
 
-from microgpt.tokenizer.tokenizer import GPTtokenizer
 from microgpt.config import Config
-from microgpt.data.fineweb import FineWeb
-from microgpt.data.hh_rlhf_chosen import HH_RLHF_Chosen
-from microgpt.model.model import PretrainModel, FinetuneModel
+from microgpt.tokenizer import GPTtokenizer
+from microgpt.data import FineWeb, HH_RLHF_Chosen
+from microgpt.model import PretrainModel, FinetuneModel
 
 def set_seed(seed=411):
     random.seed(seed)
@@ -26,7 +25,7 @@ def get_device():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def build_dataloader(dataset, batch_size, generator, shuffle=True):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True, generator=generator)
+    return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True, generator=generator)
 
 def save_checkpoint(model, optimizer, scheduler, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)

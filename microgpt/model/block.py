@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from microgpt.config import Config
-from microgpt.model.attention import MultiHeadAttention
+from microgpt import Config
+from .attention import MultiHeadAttention
 
 class Block(nn.Module):
 

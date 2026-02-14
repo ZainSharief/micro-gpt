@@ -1,6 +1,7 @@
 from transformers import GPT2Tokenizer
-from microgpt.config import Config
 import torch
+
+from microgpt import Config
 
 class GPTtokenizer():
 

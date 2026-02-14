@@ -1,8 +1,7 @@
 import torch 
-
-from microgpt.tokenizer.tokenizer import GPTtokenizer
-from microgpt.model.model import FinetuneModel
 from microgpt.config import Config
+from microgpt.tokenizer import GPTtokenizer
+from microgpt.model import FinetuneModel
 
 def main():
 

@@ -3,9 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.attention import SDPBackend, sdpa_kernel
 import math
-
-from microgpt.config import Config
-from microgpt.model.rope import RotaryPositionalEmbeddings
+from microgpt import Config
+from .rope import RotaryPositionalEmbeddings
 
 class MultiHeadAttention(nn.Module):
 

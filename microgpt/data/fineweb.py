@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import os
 from tqdm import tqdm
-from microgpt.tokenizer.tokenizer import GPTtokenizer
+from microgpt.tokenizer import GPTtokenizer
 
 class FineWeb(Dataset):
 
