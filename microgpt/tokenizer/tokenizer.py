@@ -17,13 +17,8 @@ class GPTtokenizer():
 
     def __init__(self):
 
-        """
-        Initializes the GPTtokenizer by loading the GPT2 tokenizer and adding special tokens.
-        Also sets up various attributes for easy access to token IDs and vocabulary size.
-        """
-
         self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2", clean_up_tokenization_spaces=True, verbose=False, use_fast=True)
-        self.tokenizer.pad_token = self.tokenizer.decode(Config().pad_token_id)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.truncation_side = "left"
     
         new_tokens = {
@@ -34,8 +29,9 @@ class GPTtokenizer():
         }
         self.add_tokens(new_tokens)
         
+        self.added_tokens = len(new_tokens)
         self.vocab_size = self.tokenizer.vocab_size
-
+        
         self.eos_token = self.tokenizer.eos_token
         self.eos_token_id = self.tokenizer.eos_token_id
         
@@ -50,7 +46,6 @@ class GPTtokenizer():
             setattr(self, f'{name}_id', int(self.tokenizer.convert_tokens_to_ids(token)))
     
     def encode(self, data: str) -> torch.Tensor:
-
         """
         Encodes the input text data into token IDs.
 
@@ -59,13 +54,11 @@ class GPTtokenizer():
 
         Returns:
             torch.Tensor: A tensor of token IDs with shape (1, sequence_length).
-
         """
 
         return self.tokenizer(data, return_tensors="pt")["input_ids"]
     
-    def encode_padding(self, data: str, max_length: int = 384) -> torch.Tensor:
-
+    def encode_padding(self, data: str, max_length: int = 1024) -> torch.Tensor:
         """
         Encodes the input text data into token IDs with padding to a specified maximum length.
 
@@ -78,9 +71,8 @@ class GPTtokenizer():
         """
 
         return self.tokenizer(data, max_length=max_length, truncation=True, padding="max_length", return_tensors="pt")["input_ids"].squeeze(0)
- 
+     
     def decode(self, tokens: torch.Tensor) -> str:
-
         """
         Decodes a tensor of token IDs back into a string.
 

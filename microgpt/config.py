@@ -12,7 +12,6 @@ class Config:
     projection: int = 4
 
     vocab_size: int = 50304 # round to the nearest 128
-    pad_token_id: int = 0
 
     lora_rank: int = 16
     lora_alpha: float = 16

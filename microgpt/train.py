@@ -9,7 +9,7 @@ import wandb
 
 from microgpt.config import Config
 from microgpt.tokenizer import GPTtokenizer
-from microgpt.data import FineWeb, HH_RLHF_Chosen
+from microgpt.data import FineWeb, NoRobots
 from microgpt.model import PretrainModel, FinetuneModel
 
 def set_seed(seed=411):
@@ -61,8 +61,8 @@ def train(args):
         model = PretrainModel(config, dropout=args.dropout).to(device)
 
     elif args.mode == 'finetune':
-        dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, device=device)
-        val_dataset = HH_RLHF_Chosen(tokenizer=tokenizer, context_size=config.context_size, split='test', device=device)
+        dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, device=device)
+        val_dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, split='test', device=device)
         
         checkpoint = torch.load(args.model_load_path, weights_only=True)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)

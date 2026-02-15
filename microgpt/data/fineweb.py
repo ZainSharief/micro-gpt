@@ -7,6 +7,7 @@ from tqdm import tqdm
 from microgpt.tokenizer import GPTtokenizer
 
 class FineWeb(Dataset):
+    """https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu"""
 
     def __init__(
             self, 
