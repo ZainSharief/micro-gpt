@@ -107,9 +107,14 @@ class FinetuneModel(GPTModel):
             self.load_state_dict(model_dict, strict=False) 
             return
 
+        lora_targets = [
+            '.wq.weight', '.wk.weight', '.wv.weight', '.wo.weight',
+            '.w1.weight', '.w2.weight', '.w3.weight'
+        ]
+
         # rename some keys to match the LoRA layers
         for k, v in list(model_dict.items()):
-            if any(sub in k for sub in ['.wq.weight', '.wk.weight', '.wv.weight']):
+            if any(sub in k for sub in lora_targets):
                 new_key = k.replace('.weight', '.base.weight')
                 model_dict[new_key] = v
                 del model_dict[k]
@@ -117,6 +122,7 @@ class FinetuneModel(GPTModel):
         self.load_state_dict(model_dict, strict=False)
 
         # freezing all non-lora layers 
+        previous_trainble = sum(p.numel() for p in self.parameters() if p.requires_grad)
         for param in self.parameters():
             param.requires_grad = False
         for name, param in self.transformer.named_parameters():
@@ -131,6 +137,8 @@ class FinetuneModel(GPTModel):
 
         self.transformer.wte.weight.requires_grad = True
         self.transformer.wte.weight.register_hook(freeze_old_embeddings_hook)
+        new_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f'Reduced trainable paramters from {previous_trainble} to {new_trainable}')
     
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
         B, T, C = xb.shape

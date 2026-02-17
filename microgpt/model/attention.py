@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.attention import SDPBackend, sdpa_kernel
-import math
 from microgpt import Config
 from .rope import RotaryPositionalEmbeddings
+from .lora import LoRALinear
 
 class MultiHeadAttention(nn.Module):
 
@@ -31,6 +31,7 @@ class MultiHeadAttention(nn.Module):
             self.wq = LoRALinear(self.wq, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
             self.wk = LoRALinear(self.wk, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
             self.wv = LoRALinear(self.wv, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
+            self.wo = LoRALinear(self.wo, rank=config.lora_rank, alpha=config.lora_alpha, dropout=dropout)
 
     def repeat_kv(self, x: torch.Tensor, num_repeats: int) -> torch.Tensor:
         B, T, n_kv, d = x.shape
@@ -63,20 +64,3 @@ class MultiHeadAttention(nn.Module):
             x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout, is_causal=True)
         x = x.transpose(1, 2).contiguous().view(B, T, C)
         return self.wo(x)
-    
-class LoRALinear(nn.Module):
-
-    def __init__(self, base_linear: nn.Linear, rank: int, alpha: int, dropout: float):
-        super().__init__()
-
-        self.base = base_linear
-        self.A = nn.Parameter(torch.randn(base_linear.in_features, rank))
-        self.B = nn.Parameter(torch.zeros(rank, base_linear.out_features))
-        self.scaling = alpha / self.A.size(1)
-        self.dropout = nn.Dropout(dropout)
-
-        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        lora_out = (self.dropout(x) @ self.A @ self.B) * self.scaling
-        return self.base(x) + lora_out
