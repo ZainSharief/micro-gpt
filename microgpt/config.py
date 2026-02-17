@@ -16,9 +16,9 @@ class Config:
     lora_rank: int = 16
     lora_alpha: float = 16
 
-    k = 50
-    p = 0.92
-    temperature = 0.7
+    k: int = 50
+    p: float = 0.92
+    temperature: float = 0.7
 
     base_model_path: str = 'weights/base_model.pth'
     fine_tuned_model_path: str = 'weights/fine_tuned_model.pth'

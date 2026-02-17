@@ -3,6 +3,7 @@
 
 # Weights
 weights/
+model/
 
 # Byte-compiled
 .DS_Store

@@ -9,15 +9,16 @@ def main():
 
     config = Config()
     tokenizer = GPTtokenizer()
-    checkpoint = torch.load('weights/base_model_checkpoint_190000.pth', map_location=device)
-    model = PretrainModel(config, checkpoint['model_state_dict'], train=False).to(device)
+    checkpoint = torch.load('model/pretrain_model.pth', map_location=device)
+
+    model = PretrainModel(config, checkpoint['model_state_dict']).to(device)
     model.eval()
 
     with torch.no_grad():
 
         while True:
             prompt = input("query: ")
-            print(model.generate(tokenizer, prompt, max_new_tokens=200, device=device))
+            print(model.generate(tokenizer, prompt, max_new_tokens=100, device=device))
    
 if __name__ == '__main__':
     main()
