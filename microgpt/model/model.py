@@ -100,7 +100,7 @@ class PretrainModel(GPTModel):
     
 class FinetuneModel(GPTModel):
 
-    def __init__(self, config: Config, model_dict: dict, train : bool = True, dropout: float = 0.0):
+    def __init__(self, config: Config, model_dict: dict, train : bool = True, original_tokens: int = 50257, dropout: float = 0.0):
         super().__init__(config, use_lora=True, dropout=dropout)
 
         if not train:
@@ -108,19 +108,30 @@ class FinetuneModel(GPTModel):
             return
 
         # rename some keys to match the LoRA layers
-        for k, v in model_dict.items():
+        for k, v in list(model_dict.items()):
             if any(sub in k for sub in ['.wq.weight', '.wk.weight', '.wv.weight']):
                 new_key = k.replace('.weight', '.base.weight')
                 model_dict[new_key] = v
+                del model_dict[k]
 
-        self.load_state_dict(model_dict, strict=True)
+        self.load_state_dict(model_dict, strict=False)
 
         # freezing all non-lora layers 
         for param in self.parameters():
             param.requires_grad = False
         for name, param in self.transformer.named_parameters():
-            param.requires_grad = any(x in name for x in ["wte", "lm_head", "norm", "A", "B"])
+            param.requires_grad = any(x in name for x in ["norm", "A", "B"])
 
+        # we do not want to re-train all our embeddings, only our new ones
+        # weight decay must be 0 for embeddings, otherwise they will converge to 0
+        def freeze_old_embeddings_hook(grad):
+            new_grad = grad.clone()
+            new_grad[:original_tokens] = 0.0
+            return new_grad
+
+        self.transformer.wte.weight.requires_grad = True
+        self.transformer.wte.weight.register_hook(freeze_old_embeddings_hook)
+    
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
         B, T, C = xb.shape
         xb = xb.view(B*T, C)

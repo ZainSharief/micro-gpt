@@ -12,18 +12,23 @@ from microgpt.tokenizer import GPTtokenizer
 from microgpt.data import FineWeb, NoRobots
 from microgpt.model import PretrainModel, FinetuneModel
 
-def set_seed(seed=411):
+def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     g = torch.Generator()
     g.manual_seed(seed)
     return g
 
 def get_device():
-    return 'cuda' if torch.cuda.is_available() else 'cpu'
+    if torch.cuda.is_available():
+        return 'cuda'
+    if torch.mps.is_available():
+        return 'mps'
+    return 'cpu'
 
 def build_dataloader(dataset, batch_size, generator, shuffle=True):
     return DataLoader(
@@ -58,25 +63,36 @@ def train(args):
     if args.mode == 'pretrain':
         dataset = FineWeb(tokenizer=tokenizer, context_size=config.context_size, device=device)
         val_dataset = None
+
         model = PretrainModel(config, dropout=args.dropout).to(device)
 
+        embedding_params = []
+        params = [p for n, p in model.named_parameters() if p.requires_grad]
+
     elif args.mode == 'finetune':
-        dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, device=device)
-        val_dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, split='test', device=device)
+        dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, device='cpu')
+        val_dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, split='test', device='cpu')
         
-        checkpoint = torch.load(args.model_load_path, weights_only=True)
+        checkpoint = torch.load(args.model_load_path, weights_only=True, map_location=device)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
+
+        # since we freeze some of the weights (but keep it trainable), we should apply weight_decay=0.0 
+        # to wte to avoid convergence towards 0 (weight tying makes it apply to wte and lm_head)
+        embedding_params = [model.transformer.wte.weight]
+        params = [
+            p for n, p in model.named_parameters() 
+            if p.requires_grad and p is not model.transformer.wte.weight
+        ]
 
     model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), 
+        [{'params': embedding_params, 'weight_decay': 0.0}, {'params': params, 'weight_decay': args.weight_decay}],
         lr=args.lr, 
-        weight_decay=args.weight_decay,
         fused=True
     )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,max_lr=args.max_lr, total_steps=total_steps*args.epochs, pct_start=0.05, anneal_strategy='cos')
-    wandb.init(project="microgpt-pretrain", config=args)
+    wandb.init(project=f"microgpt-{args.mode}", config=args)
 
     batch_acc_steps = args.batch_size // args.batch_acc_size
     min_val_loss = float('inf')
@@ -125,25 +141,26 @@ def train(args):
                 total_loss = 0.0
                 counter = 0
 
-        if val_dataset:
-            
-            val_loss = 0.0
-            val_dataloader = build_dataloader(val_dataset, args.batch_acc_size, g, shuffle=False)
-            model.eval()
-            with torch.no_grad():
-                for xb, yb, mask in val_dataloader:
-                    xb, yb, mask = xb.to(device), yb.to(device), mask.to(device)
-                    _, loss = model(xb, yb, mask)
-                    val_loss += loss.item()
+            if val_dataset and (current_batch + 1) % args.validaton_iter == 0:
+                
+                val_loss = 0.0
+                val_dataloader = build_dataloader(val_dataset, args.batch_acc_size, g, shuffle=False)
+                model.eval()
+                with torch.no_grad():
+                    for xb, yb, mask in val_dataloader:
+                        xb, yb, mask = xb.to(device), yb.to(device), mask.to(device)
+                        _, loss = model(xb, yb, mask)
+                        val_loss += loss.item()
 
-            val_loss /= len(val_dataloader)
-            print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}")
-            model.train()
+                val_loss /= len(val_dataloader)
+                wandb.log({"validation_loss": val_loss})
+                print(f"\nepoch: {epoch+1}/{args.epochs} | validation loss: {val_loss:.4f}")
+                model.train()
 
-            if val_loss <= min_val_loss:
-                min_val_loss = val_loss
-                save_path = args.checkpoint_path.replace('.pth', f'_{epoch+1}.pth')
-                save_checkpoint(model, optimizer, scheduler, save_path)
+                if val_loss <= min_val_loss:
+                    min_val_loss = val_loss
+                    save_path = args.checkpoint_path.replace('.pth', f'_{epoch+1}.pth')
+                    save_checkpoint(model, optimizer, scheduler, save_path)
 
     torch.save(model.state_dict(), args.final_path)
 
@@ -152,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, required=True, choices=['pretrain', 'finetune'])
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--model_load_path', type=str, default=None)
-    parser.add_argument('--seed', type=int, default=411)
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--batch_acc_size', type=int, default=32)
@@ -160,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--max_lr', type=float, default=5e-4)
     parser.add_argument('--save_iter', type=int, default=5000)
+    parser.add_argument('--validaton_iter', type=int, default=50)
     parser.add_argument('--checkpoint_path', type=str, default='weights/model.pth')
     parser.add_argument('--final_path', type=str, default='weights/model.pth')
     args = parser.parse_args()

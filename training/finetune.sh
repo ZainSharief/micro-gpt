@@ -1,14 +1,15 @@
 #!/bin/bash
 python -u microgpt/train.py \
     --mode finetune \
-    --dropout 0.1 \
-    --model_load_path weights/base_model_checkpoint_190000.pth \
-    --seed 411 \
+    --dropout 0.05 \
+    --model_load_path model/pretrain_model.pth \
+    --seed 42 \
     --epochs 8 \
-    --batch_size 128 \
-    --batch_acc_size 32 \
-    --weight_decay 0.0 \
-    --lr 5e-5 \
+    --batch_size 16 \
+    --batch_acc_size 8 \
+    --weight_decay 0.1 \
+    --lr 1e-4 \
     --max_lr 2e-4 \
+    --validaton_iter 50 \
     --checkpoint_path weights/finetune_checkpoint.pth \
     --final_path weights/fine_tuned_model.pth

@@ -2,7 +2,7 @@
 python -u microgpt/train.py \
     --mode pretrain \
     --dropout 0.0 \
-    --seed 411 \
+    --seed 42 \
     --epochs 1 \
     --batch_size 128 \
     --batch_acc_size 8 \
