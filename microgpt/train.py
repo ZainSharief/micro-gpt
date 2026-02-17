@@ -84,6 +84,7 @@ def train(args):
             if p.requires_grad and p is not model.transformer.wte.weight
         ]
 
+    uncompiled_model = model
     model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
@@ -149,7 +150,8 @@ def train(args):
                 with torch.no_grad():
                     for xb, yb, mask in val_dataloader:
                         xb, yb, mask = xb.to(device), yb.to(device), mask.to(device)
-                        _, loss = model(xb, yb, mask)
+                        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                            _, loss = uncompiled_model(xb, yb, mask)
                         val_loss += loss.item()
 
                 val_loss /= len(val_dataloader)
