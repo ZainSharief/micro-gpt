@@ -12,12 +12,15 @@ class Alpaca(Dataset):
         split: str = 'train',
         device: str = 'cpu'
     ):
-
+        
         self.data = load_dataset(
             'tatsu-lab/alpaca', 
-            split=split, 
+            split='train', 
             trust_remote_code=True
         )
+
+        split_idx = int(0.95 * len(self.data))
+        self.data = self.data.select(range(split_idx)) if split == 'train' else self.data.select(range(split_idx, len(self.data)))
 
         self.context_size = context_size
         self.tokenizer = tokenizer
@@ -72,7 +75,7 @@ if __name__ == '__main__':
     config = Config()
 
     tokenizer = GPTtokenizer()
-    dataset = Alpaca(tokenizer, context_size=config.context_size)
+    dataset = Alpaca(tokenizer, context_size=config.context_size, split='train')
     x, y, loss = dataset.__getitem__(1)
     print(len(dataset))
     print(x, y, loss.sum())
