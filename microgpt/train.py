@@ -9,7 +9,7 @@ import wandb
 
 from microgpt.config import Config
 from microgpt.tokenizer import GPTtokenizer
-from microgpt.data import FineWeb, NoRobots
+from microgpt.data import FineWeb, Alpaca
 from microgpt.model import PretrainModel, FinetuneModel
 
 def set_seed(seed=42):
@@ -70,8 +70,8 @@ def train(args):
         params = [p for n, p in model.named_parameters() if p.requires_grad]
 
     elif args.mode == 'finetune':
-        dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, device='cpu')
-        val_dataset = NoRobots(tokenizer=tokenizer, context_size=config.context_size, split='test', device='cpu')
+        dataset = Alpaca(tokenizer=tokenizer, context_size=config.context_size, device='cpu')
+        val_dataset = Alpaca(tokenizer=tokenizer, context_size=config.context_size, split='test', device='cpu')
         
         checkpoint = torch.load(args.model_load_path, weights_only=True, map_location=device)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
@@ -84,7 +84,10 @@ def train(args):
             if p.requires_grad and p is not model.transformer.wte.weight
         ]
 
-    uncompiled_model = model
+    # torch bug with validation data on compiled models
+    if val_dataset:
+        uncompiled_model = model
+
     model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
