@@ -4,7 +4,7 @@ python -u microgpt/train.py \
     --dropout 0.05 \
     --model_load_path model/pretrain_model.pth \
     --seed 42 \
-    --epochs 8 \
+    --epochs 3 \
     --batch_size 128 \
     --batch_acc_size 8 \
     --weight_decay 0.1 \
