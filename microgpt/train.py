@@ -75,6 +75,7 @@ def train(args):
         
         checkpoint = torch.load(args.model_load_path, weights_only=True, map_location=device)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)
+        model.apply_semantic_weight_init(tokenizer=tokenizer)
 
         # since we freeze some of the weights (but keep it trainable), we should apply weight_decay=0.0 
         # to wte to avoid convergence towards 0 (weight tying makes it apply to wte and lm_head)

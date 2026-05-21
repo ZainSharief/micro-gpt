@@ -139,7 +139,20 @@ class FinetuneModel(GPTModel):
         self.transformer.wte.weight.register_hook(freeze_old_embeddings_hook)
         new_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f'Reduced trainable paramters from {previous_trainble} to {new_trainable}')
-    
+
+    def apply_semantic_weight_init(self, tokenizer):
+        """Rather than starting cold, we can use semantic weight initialization to encode the meaning of our new tokens"""        
+        user_id = tokenizer.encode(" user")[0]
+        asst_id = tokenizer.encode(" assistant")[0]
+        newline_id = tokenizer.encode("\n")[0]
+            
+        with torch.no_grad():
+            wte_data = self.transformer.wte.weight.data
+            wte_data[tokenizer.user_token_id] = wte_data[user_id].clone()
+            wte_data[tokenizer.assistant_token_id] = wte_data[asst_id].clone()
+            wte_data[tokenizer.end_user_token_id] = wte_data[newline_id].clone()
+            wte_data[tokenizer.end_assistant_token_id] = wte_data[newline_id].clone()
+
     def calculate_loss(self, xb: torch.Tensor, yb: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
         B, T, C = xb.shape
         xb = xb.view(B*T, C)
