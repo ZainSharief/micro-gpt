@@ -106,7 +106,7 @@ class FinetuneModel(GPTModel):
         super().__init__(config, use_lora=True, dropout=dropout)
 
         if not train:
-            self.load_state_dict(model_dict, strict=False) 
+            self.load_state_dict(model_dict, strict=True) 
             return
 
         lora_targets = [
