@@ -81,7 +81,7 @@ class DailyDialog(Dataset):
                 end = len(data_tensor) - 1 
 
             if end >= start:
-                loss_mask[start : end + 1] = 1.0
+                loss_mask[start + 1 : end + 1] = 1.0
                 
         return loss_mask
     
