@@ -82,7 +82,9 @@ class PretrainModel(GPTModel):
         for _ in range(max_new_tokens):
 
             context = context[:, -self.config.context_size:]
-            logits, _ = self.forward(context)
+
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                logits, _ = self.forward(context)
 
             logits = logits / self.config.temperature
             probs, idxs = torch.topk(logits, self.config.k)
@@ -191,7 +193,9 @@ class FinetuneModel(GPTModel):
         for _ in range(max_new_tokens):
 
             context = context[:, -self.config.context_size:]
-            logits, _ = self.forward(context)
+
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                logits, _ = self.forward(context)
 
             logits = logits / self.config.temperature
             probs, idxs = torch.topk(logits, self.config.k)
