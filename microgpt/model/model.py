@@ -190,12 +190,22 @@ class FinetuneModel(GPTModel):
         context = tokenizer.encode(text)[:, -self.config.context_size+1:].to(device)
         output = []
 
+        banned_tokens = [
+            tokenizer.eos_token_id,
+            tokenizer.user_token_id, 
+            tokenizer.end_user_token_id, 
+            tokenizer.assistant_token_id
+        ]
+
         for _ in range(max_new_tokens):
 
             context = context[:, -self.config.context_size:]
 
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 logits, _ = self.forward(context)
+
+            for banned in banned_tokens:
+                logits[:, banned] = float('-inf')
 
             logits = logits / self.config.temperature
             probs, idxs = torch.topk(logits, self.config.k)
