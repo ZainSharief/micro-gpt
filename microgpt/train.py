@@ -84,7 +84,6 @@ def train(args):
             if p.requires_grad and p is not model.transformer.wte.weight
         ]
 
-    # torch bug with validation data on compiled models
     if val_dataset:
         uncompiled_model = model
 
@@ -151,8 +150,10 @@ def train(args):
                 total_loss = 0.0
                 counter = 0
 
-            if val_dataset and (current_batch + 1) % args.validaton_iter == 0:
+            if val_dataset and ((current_batch + 1) % args.validation_iter == 0 or (current_batch + 1) == len(dataloader)):
                 
+                total_loss = 0.0
+                counter = 0
                 val_loss = 0.0
                 val_dataloader = build_dataloader(val_dataset, args.batch_acc_size, g, shuffle=False)
                 model.eval()
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_lr', type=float, default=5e-4)
     parser.add_argument('--embedding_max_lr', type=float, default=1e-3)
     parser.add_argument('--save_iter', type=int, default=5000)
-    parser.add_argument('--validaton_iter', type=int, default=50)
+    parser.add_argument('--validation_iter', type=int, default=50)
     parser.add_argument('--checkpoint_path', type=str, default='weights/model.pth')
     parser.add_argument('--final_path', type=str, default='weights/model.pth')
     args = parser.parse_args()

@@ -10,6 +10,6 @@ python -u microgpt/train.py \
     --weight_decay 0.1 \
     --lr 1e-4 \
     --max_lr 2e-4 \
-    --validaton_iter 100 \
+    --validation_iter 100 \
     --checkpoint_path weights/finetune_checkpoint.pth \
     --final_path weights/fine_tuned_model.pth
