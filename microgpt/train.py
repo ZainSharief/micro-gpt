@@ -91,11 +91,17 @@ def train(args):
     model = torch.compile(model)
     total_steps = len(dataset) // args.batch_size
     optimizer = torch.optim.AdamW(
-        [{'params': embedding_params, 'weight_decay': 0.0}, {'params': params, 'weight_decay': args.weight_decay}],
-        lr=args.lr, 
+        [{'params': embedding_params, 'weight_decay': 0.0, 'lr': args.embedding_lr}, 
+         {'params': params, 'weight_decay': args.weight_decay, 'lr': args.lr}],
         fused=True
     )
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer,max_lr=args.max_lr, total_steps=total_steps*args.epochs, pct_start=0.05, anneal_strategy='cos')
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=[args.embedding_max_lr, args.max_lr], 
+        total_steps=total_steps*args.epochs, 
+        pct_start=0.05, 
+        anneal_strategy='cos'
+    )
     wandb.init(project=f"microgpt-{args.mode}", config=args)
 
     batch_acc_steps = args.batch_size // args.batch_acc_size
@@ -180,7 +186,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch_acc_size', type=int, default=32)
     parser.add_argument('--weight_decay', type=float, default=0.01)
     parser.add_argument('--lr', type=float, default=3e-5)
+    parser.add_argument('--embedding_lr', type=float, default=3e-5)
     parser.add_argument('--max_lr', type=float, default=5e-4)
+    parser.add_argument('--embedding_max_lr', type=float, default=1e-3)
     parser.add_argument('--save_iter', type=int, default=5000)
     parser.add_argument('--validaton_iter', type=int, default=50)
     parser.add_argument('--checkpoint_path', type=str, default='weights/model.pth')
