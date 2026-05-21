@@ -9,7 +9,7 @@ import wandb
 
 from microgpt.config import Config
 from microgpt.tokenizer import GPTtokenizer
-from microgpt.data import FineWeb, Alpaca
+from microgpt.data import FineWeb, Oasst1
 from microgpt.model import PretrainModel, FinetuneModel
 
 def set_seed(seed=42):
@@ -70,8 +70,8 @@ def train(args):
         params = [p for n, p in model.named_parameters() if p.requires_grad]
 
     elif args.mode == 'finetune':
-        dataset = Alpaca(tokenizer=tokenizer, context_size=config.context_size, device='cpu')
-        val_dataset = Alpaca(tokenizer=tokenizer, context_size=config.context_size, split='test', device='cpu')
+        dataset = Oasst1(tokenizer=tokenizer, context_size=config.context_size, device='cpu')
+        val_dataset = Oasst1(tokenizer=tokenizer, context_size=config.context_size, split='validation', device='cpu')
         
         checkpoint = torch.load(args.model_load_path, weights_only=True, map_location=device)
         model = FinetuneModel(config, checkpoint['model_state_dict'], dropout=args.dropout).to(device)

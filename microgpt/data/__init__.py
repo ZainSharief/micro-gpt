@@ -1,3 +1,2 @@
 from microgpt.data.fineweb import FineWeb
-from microgpt.data.alpaca import Alpaca
-from microgpt.data.hh_rlhf import HH_RLHF
+from microgpt.data.oasst1 import Oasst1
