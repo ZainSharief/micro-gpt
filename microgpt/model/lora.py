@@ -14,8 +14,8 @@ class LoRALinear(nn.Module):
         self.scaling = alpha / self.A.size(1)
         self.dropout = nn.Dropout(dropout)
 
-        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.A.T, a=math.sqrt(5))
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        lora_out = (self.dropout(x) @ self.A @ self.B) * self.scaling
+        lora_out = (self.dropout(x @ self.A) @ self.B) * self.scaling
         return self.base(x) + lora_out
